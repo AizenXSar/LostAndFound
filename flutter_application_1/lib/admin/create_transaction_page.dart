@@ -315,13 +315,17 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
                             final location = (data['location'] as String?) ?? '';
                             final imageUrl = (data['imageUrl'] as String?) ?? '';
                             final theme = Theme.of(context);
+                            final isDark = theme.brightness == Brightness.dark;
+                            final borderColor = isDark 
+                                ? theme.colorScheme.outline.withOpacity(0.3)
+                                : Colors.grey[300]!;
 
                             return Container(
-                              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                              margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 16),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
-                                  color: Colors.grey[300]!,
+                                  color: borderColor,
                                   width: 0.5,
                                 ),
                               ),

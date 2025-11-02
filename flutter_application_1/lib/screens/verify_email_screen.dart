@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
-import 'home_screen.dart';
+import 'main_nav.dart';
+import '../admin/home.dart';
 import '../utils/sweet_alert.dart';
 
 class VerifyEmailScreen extends StatefulWidget {
@@ -90,12 +92,43 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
           _isChecking = false;
         });
 
+        // Ensure user data exists in Firestore (in case it wasn't saved during registration)
+        try {
+          final currentUser = AuthService.currentUser;
+          if (currentUser != null) {
+            final firestore = FirebaseFirestore.instance;
+            final userDoc = await firestore.collection('users').doc(currentUser.uid).get();
+            if (!userDoc.exists || userDoc.data() == null) {
+              // User data doesn't exist in Firestore, create it now
+              print('⚠ User data missing in Firestore, creating now...');
+              final userDisplayName = currentUser.displayName ?? currentUser.email?.split('@')[0] ?? 'User';
+              await firestore.collection('users').doc(currentUser.uid).set({
+                'name': userDisplayName,
+                'email': currentUser.email ?? '',
+                'profileImageUrl': currentUser.photoURL ?? '',
+                'role': 'user',
+                'isAdmin': false,
+                'createdAt': FieldValue.serverTimestamp(),
+                'updatedAt': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: false));
+              print('✓ User data created in Firestore after email verification');
+            }
+          }
+        } catch (e) {
+          print('⚠ Error ensuring user data exists in Firestore: $e');
+          // Continue anyway - navigation shouldn't be blocked
+        }
+
         // Wait a moment to show success message then navigate to home
         await Future.delayed(const Duration(seconds: 2));
 
         if (mounted) {
+          // Decide destination: admin → AdminHomePage (with bottom nav), else → MainNav
+          final isAdmin = await AuthService.currentUserIsAdmin();
+          final Widget dest = isAdmin ? const AdminHomePage() : const MainNav();
+          
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            MaterialPageRoute(builder: (context) => dest),
             (route) => false,
           );
         }

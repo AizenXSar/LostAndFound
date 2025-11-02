@@ -590,9 +590,9 @@ class _ModernLineChartCard extends StatelessWidget {
 class _ModernChartCard extends StatelessWidget {
   const _ModernChartCard({
     required this.title,
-    this.subtitle,
     required this.child,
-    this.bottomPadding = 16,
+    this.subtitle,
+    this.bottomPadding = 24,
   });
   final String title;
   final String? subtitle;

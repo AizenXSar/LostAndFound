@@ -229,7 +229,6 @@ class _LogsPageState extends State<LogsPage> {
                 return const Center(child: Text('No matches'));
               }
               
-              final theme = Theme.of(context);
               return ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 itemCount: filtered.length,
@@ -252,10 +251,24 @@ class _LogsPageState extends State<LogsPage> {
                     builder: (context, userSnap) {
                       final userData = userSnap.data?.data();
                       final profileImageUrl = (userData?['profileImageUrl'] as String?)?.trim();
+                      final theme = Theme.of(context);
+                      final isDark = theme.brightness == Brightness.dark;
+                      final borderColor = isDark 
+                          ? theme.colorScheme.outline.withOpacity(0.3)
+                          : Colors.grey[300]!;
                       
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 4),
-                        child: ListTile(
+                      return Container(
+                        margin: const EdgeInsets.symmetric(vertical: 2),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: borderColor,
+                            width: 0.5,
+                          ),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: ListTile(
                           dense: true,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           leading: profileImageUrl != null && profileImageUrl.isNotEmpty
@@ -347,7 +360,8 @@ class _LogsPageState extends State<LogsPage> {
                       ),
                           isThreeLine: true,
                         ),
-                      );
+                      ),
+                    );
                     },
                   );
                 },

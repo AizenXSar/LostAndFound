@@ -286,6 +286,10 @@ class _CreatePostPageState extends State<CreatePostPage> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Theme.of(context).colorScheme.onSurface.withOpacity(0.06),
+                      border: Border.all(
+                        color: Colors.white,
+                        width: 3,
+                      ),
                       image: _imageFile != null
                           ? DecorationImage(
                               image: FileImage(_imageFile!),
@@ -441,7 +445,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                                 : Colors.white;
                             
                             return DropdownButtonFormField<String>(
-                              value: _status,
+                              initialValue: _status,
                               icon: Icon(Icons.arrow_drop_down_rounded, size: 20, color: iconColor),
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: textColor,
@@ -586,7 +590,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                                 : Colors.white;
                             
                             return DropdownButtonFormField<String>(
-                              value: _type,
+                              initialValue: _type,
                               icon: Icon(Icons.arrow_drop_down_rounded, size: 20, color: iconColor),
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: textColor,

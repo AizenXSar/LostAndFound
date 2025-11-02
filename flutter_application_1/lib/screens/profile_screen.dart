@@ -138,9 +138,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showSettingsModal(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
     showDialog(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.3),
+      barrierColor: Colors.black.withOpacity(isDark ? 0.5 : 0.3),
       builder: (BuildContext context) {
         return Stack(
           children: [
@@ -154,19 +157,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
             // Dialog content
             Center(
               child: Dialog(
+                backgroundColor: isDark 
+                    ? theme.colorScheme.surfaceContainerHighest
+                    : Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
+                  side: isDark
+                      ? BorderSide(
+                          color: theme.colorScheme.outline.withOpacity(0.2),
+                          width: 1,
+                        )
+                      : BorderSide.none,
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(24.0),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(
+                      Text(
                         'Settings',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black87,
                         ),
                       ),
                       const SizedBox(height: 24),
@@ -182,14 +195,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ThemeController.instance.isDark
                                 ? Icons.light_mode
                                 : Icons.dark_mode,
+                            color: isDark ? Colors.black : Colors.white,
                           ),
                           label: Text(
                             ThemeController.instance.isDark
                                 ? 'Switch to Light Mode'
                                 : 'Switch to Dark Mode',
+                            style: TextStyle(
+                              color: isDark ? Colors.black : Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor: isDark
+                                ? Colors.white
+                                : theme.colorScheme.primary,
+                            foregroundColor: isDark
+                                ? Colors.black
+                                : Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -205,8 +229,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             Navigator.of(context).pop();
                             _logout(context);
                           },
-                          icon: const Icon(Icons.logout),
-                          label: const Text('Log out'),
+                          icon: const Icon(Icons.logout, color: Colors.white),
+                          label: const Text(
+                            'Log out',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             backgroundColor: Colors.red,
@@ -221,7 +251,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       // Cancel Button
                       TextButton(
                         onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Cancel'),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: isDark 
+                                ? Colors.white.withOpacity(0.9)
+                                : theme.colorScheme.primary,
+                          ),
+                        ),
                       ),
                     ],
                   ),

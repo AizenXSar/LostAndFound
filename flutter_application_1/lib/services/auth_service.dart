@@ -187,7 +187,7 @@ class AuthService {
         return {'success': false, 'message': 'Registration failed'};
       }
 
-      // 2. Store additional user data in Firestore (best-effort)
+      // 2. Store additional user data in Firestore
       String? profileWriteWarning;
       try {
         await _firestore.collection('users').doc(user.uid).set({
@@ -198,17 +198,27 @@ class AuthService {
           'isAdmin': false,
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
-        });
+        }, SetOptions(merge: false));
+        print('✓ User data saved to Firestore successfully for: ${user.uid}');
       } on FirebaseException catch (e) {
+        print('✗ Firestore write error: ${e.code} - ${e.message}');
         if (e.code == 'permission-denied') {
-          profileWriteWarning = ' (profile not saved due to Firestore rules)';
+          profileWriteWarning = ' (profile not saved due to Firestore rules - check security rules)';
+          print('ERROR: Firestore permission denied. Check your Firestore security rules.');
+          print('Make sure your Firestore rules allow users to create their own document in the users collection.');
         } else if (e.code == 'not-found' ||
             e.message?.contains('does not exist') == true) {
           profileWriteWarning =
               ' (Firestore database not created - create it in Firebase Console)';
+          print('ERROR: Firestore database does not exist.');
         } else {
-          profileWriteWarning = ' (${e.message ?? e.code})';
+          profileWriteWarning = ' (Firestore error: ${e.message ?? e.code})';
+          print('ERROR: Firestore write failed: ${e.code} - ${e.message}');
         }
+      } catch (e, stackTrace) {
+        print('✗ Unexpected error saving to Firestore: $e');
+        print('Stack trace: $stackTrace');
+        profileWriteWarning = ' (Error saving profile: ${e.toString()})';
       }
 
       // 3. Send verification email (with fallback ActionCodeSettings)

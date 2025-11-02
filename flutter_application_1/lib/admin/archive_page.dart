@@ -26,8 +26,6 @@ class _ArchivePageState extends State<ArchivePage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 40,
@@ -123,12 +121,17 @@ class _ArchivePageState extends State<ArchivePage> {
                   final status = (data['status'] as String?) ?? 'claimed';
                   final imageUrl = (data['imageUrl'] as String?) ?? '';
                   final location = (data['location'] as String?) ?? '';
+                  final theme = Theme.of(context);
+                  final isDark = theme.brightness == Brightness.dark;
+                  final borderColor = isDark 
+                      ? theme.colorScheme.outline.withOpacity(0.3)
+                      : Colors.grey[300]!;
                   return Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                    margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 16),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
-                        color: Colors.grey[300]!,
+                        color: borderColor,
                         width: 0.5,
                       ),
                     ),

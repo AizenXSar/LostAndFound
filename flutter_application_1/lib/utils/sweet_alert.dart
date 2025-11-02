@@ -165,6 +165,9 @@ class _SweetAlertDialogState extends State<_SweetAlertDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
     return Material(
       color: Colors.transparent,
       child: GestureDetector(
@@ -192,11 +195,21 @@ class _SweetAlertDialogState extends State<_SweetAlertDialog> {
                   margin: const EdgeInsets.symmetric(horizontal: 24),
                   constraints: const BoxConstraints(maxWidth: 400),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
+                    color: isDark 
+                        ? theme.colorScheme.surfaceContainerHighest
+                        : Colors.white,
                     borderRadius: BorderRadius.circular(16),
+                    border: isDark
+                        ? Border.all(
+                            color: theme.colorScheme.outline.withOpacity(0.2),
+                            width: 1,
+                          )
+                        : null,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
+                        color: isDark
+                            ? Colors.black.withOpacity(0.5)
+                            : Colors.black.withOpacity(0.2),
                         blurRadius: 20,
                         spreadRadius: 0,
                       ),
@@ -211,11 +224,9 @@ class _SweetAlertDialogState extends State<_SweetAlertDialog> {
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           child: Icon(
                             Icons.drag_handle,
-                            color: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.color
-                                ?.withOpacity(0.4),
+                            color: isDark
+                                ? Colors.white.withOpacity(0.4)
+                                : Colors.black.withOpacity(0.4),
                             size: 24,
                           ),
                         ),
@@ -228,7 +239,7 @@ class _SweetAlertDialogState extends State<_SweetAlertDialog> {
                               width: 60,
                               height: 60,
                               decoration: BoxDecoration(
-                                color: _getIconColor().withOpacity(0.1),
+                                color: _getIconColor().withOpacity(isDark ? 0.2 : 0.1),
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
@@ -240,8 +251,9 @@ class _SweetAlertDialogState extends State<_SweetAlertDialog> {
                             const SizedBox(height: 20),
                             Text(
                               widget.title,
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              style: theme.textTheme.titleLarge?.copyWith(
                                     fontWeight: FontWeight.w600,
+                                    color: isDark ? Colors.white : Colors.black87,
                                   ),
                               textAlign: TextAlign.center,
                             ),
@@ -249,12 +261,10 @@ class _SweetAlertDialogState extends State<_SweetAlertDialog> {
                               const SizedBox(height: 12),
                               Text(
                                 widget.message!,
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.color
-                                          ?.withOpacity(0.8),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: isDark
+                                          ? Colors.white.withOpacity(0.9)
+                                          : Colors.black87.withOpacity(0.8),
                                     ),
                                 textAlign: TextAlign.center,
                               ),
@@ -268,11 +278,22 @@ class _SweetAlertDialogState extends State<_SweetAlertDialog> {
                           onPressed: widget.onConfirm,
                           style: FilledButton.styleFrom(
                             minimumSize: const Size(double.infinity, 48),
+                            backgroundColor: isDark
+                                ? Colors.white
+                                : theme.colorScheme.primary,
+                            foregroundColor: isDark
+                                ? Colors.black
+                                : Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          child: const Text('OK'),
+                          child: const Text(
+                            'OK',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
                     ],

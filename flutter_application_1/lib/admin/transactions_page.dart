@@ -291,6 +291,10 @@ class _TransactionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final borderColor = isDark 
+        ? theme.colorScheme.outline.withOpacity(0.3)
+        : Colors.grey[300]!;
     final title = (data['itemTitle'] as String?) ?? (data['title'] as String?) ?? 'Untitled';
     final location = (data['itemLocation'] as String?) ?? (data['location'] as String?) ?? '';
     final imageUrl = (data['itemImageUrl'] as String?) ?? (data['imageUrl'] as String?) ?? '';
@@ -307,15 +311,20 @@ class _TransactionCard extends StatelessWidget {
       }
     }
 
-    return Card(
-      elevation: 1,
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 2),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: borderColor,
+          width: 0.5,
+        ),
       ),
-      child: InkWell(
-        onTap: () => _showTransactionDetails(context),
-        borderRadius: BorderRadius.circular(12),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showTransactionDetails(context),
+          borderRadius: BorderRadius.circular(6),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -468,6 +477,7 @@ class _TransactionCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
       ),
     );
   }
