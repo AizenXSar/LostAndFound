@@ -37,7 +37,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
     return Scaffold(
       appBar: AppBar(
         title: Image.asset(
-          'assets/logo/logo1-Photoroom.png',
+          Theme.of(context).brightness == Brightness.dark
+              ? 'assets/logo/logo2.png'
+              : 'assets/logo/logo1-Photoroom.png',
           height: 40,
           fit: BoxFit.contain,
         ),

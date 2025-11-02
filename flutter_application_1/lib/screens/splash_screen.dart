@@ -92,7 +92,9 @@ class _SplashScreenState extends State<SplashScreen> {
                           maxHeight: 200,
                         ),
                         child: Image.asset(
-                          'assets/logo/logo1-Photoroom.png',
+                          Theme.of(context).brightness == Brightness.dark
+                              ? 'assets/logo/logo2.png'
+                              : 'assets/logo/logo1-Photoroom.png',
                           fit: BoxFit.contain,
                           errorBuilder: (context, error, stackTrace) {
                             return const Icon(
