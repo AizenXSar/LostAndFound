@@ -82,7 +82,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                     return const Center(child: Text('No matches'));
                   }
                   return ListView.builder(
-                    padding: const EdgeInsets.all(12),
+                    padding: EdgeInsets.zero,
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final data = filtered[index].data();
@@ -92,15 +92,26 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                       final name = (data['name'] as String?) ?? 'Unnamed';
                       final uid = id;
                       final avatar = (data['profileImageUrl'] as String?) ?? '';
-                      return ListTile(
-                        dense: true,
-                        visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        leading: CircleAvatar(
-                          radius: 18,
-                          backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
-                          child: avatar.isEmpty ? const Icon(Icons.person, size: 18) : null,
+                      return Container(
+                        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: Colors.grey[300]!,
+                            width: 0.5,
+                          ),
                         ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: ListTile(
+                            dense: true,
+                            visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            leading: CircleAvatar(
+                              radius: 18,
+                              backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
+                              child: avatar.isEmpty ? const Icon(Icons.person, size: 18) : null,
+                            ),
                         title: Text(
                           name,
                           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
@@ -141,6 +152,8 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                               onPressed: () => _openEditUser(context, id, data),
                             ),
                           ],
+                        ),
+                          ),
                         ),
                       );
                     },

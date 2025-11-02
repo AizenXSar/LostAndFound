@@ -86,7 +86,7 @@ class _AdminPostsPageState extends State<AdminPostsPage> {
                     return const Center(child: Text('No matches'));
                   }
                   return ListView.builder(
-                    padding: const EdgeInsets.all(12),
+                    padding: EdgeInsets.zero,
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final data = filtered[index].data();
@@ -96,20 +96,31 @@ class _AdminPostsPageState extends State<AdminPostsPage> {
                       final status = (data['status'] as String?) ?? 'unclaimed';
                       final imageUrl = (data['imageUrl'] as String?) ?? '';
                       final location = (data['location'] as String?) ?? '';
-                      return ListTile(
-                        dense: true,
-                        visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (ctx) => _PostDetailsPage(
-                                postId: id,
-                                firestore: widget.firestore,
-                              ),
-                            ),
-                          );
-                        },
+                      return Container(
+                        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: Colors.grey[300]!,
+                            width: 0.5,
+                          ),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: ListTile(
+                            dense: true,
+                            visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (ctx) => _PostDetailsPage(
+                                    postId: id,
+                                    firestore: widget.firestore,
+                                  ),
+                                ),
+                              );
+                            },
                         leading: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: imageUrl.isNotEmpty
@@ -197,6 +208,8 @@ class _AdminPostsPageState extends State<AdminPostsPage> {
                               ),
                             ),
                           ],
+                        ),
+                          ),
                         ),
                       );
                     },

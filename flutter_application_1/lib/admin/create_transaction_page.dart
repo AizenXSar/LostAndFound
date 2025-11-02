@@ -19,7 +19,7 @@ class CreateTransactionPage extends StatefulWidget {
 class _CreateTransactionPageState extends State<CreateTransactionPage> {
   // Claim form state
   final _claimFormKey = GlobalKey<FormState>();
-  String? _selectedItemId;
+  final ValueNotifier<String?> _selectedItemIdNotifier = ValueNotifier<String?>(null);
   bool _showClaimForm = false; // Track if claim form is shown
   final TextEditingController _claimerNameController = TextEditingController();
   final TextEditingController _claimerEmailController = TextEditingController();
@@ -30,12 +30,14 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
   File? _proofImageFile;
   bool _isSubmitting = false;
   final ImagePicker _picker = ImagePicker();
+  
+  String? get _selectedItemId => _selectedItemIdNotifier.value;
 
   @override
   void initState() {
     super.initState();
     _proofImageFile = null;
-    _selectedItemId = null;
+    _selectedItemIdNotifier.value = null;
     _showClaimForm = false;
     _searchQueryNotifier.value = '';
     _itemSearchController.clear();
@@ -46,6 +48,7 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
 
   @override
   void dispose() {
+    _selectedItemIdNotifier.dispose();
     _searchQueryNotifier.dispose();
     _searchFocusNode.dispose();
     _itemSearchController.dispose();
@@ -104,19 +107,26 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
         automaticallyImplyLeading: !_showClaimForm, // Only auto-imply leading when not in claim form
         actions: [
           // Show "Claim" button when item is selected but form is not shown yet
-          if (_selectedItemId != null && !_showClaimForm)
-            TextButton.icon(
-              onPressed: () {
-                setState(() {
-                  _showClaimForm = true;
-                });
-              },
-              icon: const Icon(Icons.check),
-              label: const Text('Claim'),
-              style: TextButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.primary,
-              ),
-            ),
+          ValueListenableBuilder<String?>(
+            valueListenable: _selectedItemIdNotifier,
+            builder: (context, selectedItemId, _) {
+              if (selectedItemId != null && !_showClaimForm) {
+                return TextButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _showClaimForm = true;
+                    });
+                  },
+                  icon: const Icon(Icons.check),
+                  label: const Text('Claim'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.primary,
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
         ],
       ),
       body: Form(
@@ -191,9 +201,9 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
                                     _searchQueryNotifier.value = trimmed;
                                     
                                     // Clear selection if user starts typing again
-                                    if (trimmed.isNotEmpty && _selectedItemId != null) {
+                                    if (trimmed.isNotEmpty && _selectedItemIdNotifier.value != null) {
+                                      _selectedItemIdNotifier.value = null;
                                       setState(() {
-                                        _selectedItemId = null;
                                         _showClaimForm = false;
                                       });
                                     }
@@ -282,7 +292,7 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
                         }
                         
                         return ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: EdgeInsets.zero,
                           itemCount: filteredItems.length,
                           itemBuilder: (context, index) {
                             final doc = filteredItems[index];
@@ -292,30 +302,45 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
                             final description = (data['description'] as String?) ?? '';
                             final location = (data['location'] as String?) ?? '';
                             final imageUrl = (data['imageUrl'] as String?) ?? '';
-                            final isSelected = _selectedItemId == itemId;
                             final theme = Theme.of(context);
 
-                            return InkWell(
-                              onTap: () {
-                                setState(() {
-                                  if (_selectedItemId == itemId) {
-                                    _selectedItemId = null;
+                            return Container(
+                              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: Colors.grey[300]!,
+                                  width: 0.5,
+                                ),
+                              ),
+                              child: InkWell(
+                                onTap: () {
+                                  // Update selection without setState - only the radio button will rebuild
+                                  if (_selectedItemIdNotifier.value == itemId) {
+                                    _selectedItemIdNotifier.value = null;
                                   } else {
-                                    _selectedItemId = itemId;
+                                    _selectedItemIdNotifier.value = itemId;
                                   }
                                   _showClaimForm = false;
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                child: Row(
+                                },
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Row(
                                   children: [
-                                    Icon(
-                                      isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                                      color: isSelected
-                                          ? theme.colorScheme.primary
-                                          : theme.colorScheme.onSurfaceVariant,
-                                      size: 20,
+                                    // Use ValueListenableBuilder to only rebuild the radio button
+                                    ValueListenableBuilder<String?>(
+                                      valueListenable: _selectedItemIdNotifier,
+                                      builder: (context, selectedId, _) {
+                                        final isSelected = selectedId == itemId;
+                                        return Icon(
+                                          isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                                          color: isSelected
+                                              ? theme.colorScheme.primary
+                                              : theme.colorScheme.onSurfaceVariant,
+                                          size: 20,
+                                        );
+                                      },
                                     ),
                                     const SizedBox(width: 12),
                                     ClipRRect(
@@ -405,7 +430,8 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
                                   ],
                                 ),
                               ),
-                            );
+                            ),
+                          );
                           },
                         );
                       },
@@ -422,110 +448,116 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
                     children: [
                       // Claim Form Fields - shown only after clicking "Claim" button
                       // Selected Item Info (read-only)
-                      if (_selectedItemId != null) ...[
-                StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                  stream: widget.firestore
-                      .collection('items')
-                      .doc(_selectedItemId)
-                      .snapshots(),
-                  builder: (context, itemSnap) {
-                    if (!itemSnap.hasData) {
-                      return const SizedBox.shrink();
-                    }
-                    final data = itemSnap.data!.data() ?? {};
-                    final title = (data['title'] as String?) ?? 'Untitled';
-                    final location = (data['location'] as String?) ?? '';
-                    final imageUrl = (data['imageUrl'] as String?) ?? '';
+                      ValueListenableBuilder<String?>(
+                        valueListenable: _selectedItemIdNotifier,
+                        builder: (context, selectedItemId, _) {
+                          if (selectedItemId == null) {
+                            return const SizedBox.shrink();
+                          }
+                          return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                            stream: widget.firestore
+                                .collection('items')
+                                .doc(selectedItemId)
+                                .snapshots(),
+                            builder: (context, itemSnap) {
+                              if (!itemSnap.hasData) {
+                                return const SizedBox.shrink();
+                              }
+                              final data = itemSnap.data!.data() ?? {};
+                              final title = (data['title'] as String?) ?? 'Untitled';
+                              final location = (data['location'] as String?) ?? '';
+                              final imageUrl = (data['imageUrl'] as String?) ?? '';
 
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: imageUrl.isNotEmpty
-                                ? Image.network(
-                                    imageUrl,
-                                    width: 40,
-                                    height: 40,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Container(
-                                      width: 40,
-                                      height: 40,
-                                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                      child: Icon(
-                                        Icons.image,
-                                        size: 16,
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  )
-                                : Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Icon(
-                                      Icons.image,
-                                      size: 16,
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                    ),
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
                                   ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  title,
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                if (location.isNotEmpty)
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.location_on_outlined,
-                                        size: 12,
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          location,
-                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                child: Row(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: imageUrl.isNotEmpty
+                                          ? Image.network(
+                                              imageUrl,
+                                              width: 40,
+                                              height: 40,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => Container(
+                                                width: 40,
+                                                height: 40,
+                                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                                child: Icon(
+                                                  Icons.image,
+                                                  size: 16,
+                                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                ),
+                                              ),
+                                            )
+                                          : Container(
+                                              width: 40,
+                                              height: 40,
+                                              decoration: BoxDecoration(
+                                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: Icon(
+                                                Icons.image,
+                                                size: 16,
                                                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                                               ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                                            ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            title,
+                                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          if (location.isNotEmpty)
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.location_on_outlined,
+                                                  size: 12,
+                                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Expanded(
+                                                  child: Text(
+                                                    location,
+                                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                        ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                        ],
                                       ),
-                                    ],
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 8),
-              ],
+                      const SizedBox(height: 8),
               // Claimer Name
               Text(
                 'Claimer Name *',
