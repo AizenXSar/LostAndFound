@@ -8,7 +8,7 @@ class ThemeController {
 
   static const _prefsKey = 'app_theme_mode';
 
-  final ValueNotifier<ThemeMode> _themeMode = ValueNotifier(ThemeMode.system);
+  final ValueNotifier<ThemeMode> _themeMode = ValueNotifier(ThemeMode.light);
   ValueListenable<ThemeMode> get listenable => _themeMode;
   ThemeMode get themeMode => _themeMode.value;
   bool get isDark => _themeMode.value == ThemeMode.dark;
@@ -23,8 +23,12 @@ class ThemeController {
       case 'dark':
         _themeMode.value = ThemeMode.dark;
         break;
-      default:
+      case 'system':
         _themeMode.value = ThemeMode.system;
+        break;
+      default:
+        // Default to light mode for new installations
+        _themeMode.value = ThemeMode.light;
     }
   }
 

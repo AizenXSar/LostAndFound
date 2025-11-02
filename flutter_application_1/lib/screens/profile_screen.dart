@@ -137,6 +137,103 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  void _showSettingsModal(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.3),
+      builder: (BuildContext context) {
+        return Stack(
+          children: [
+            // Blurry background
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+              child: Container(
+                color: Colors.transparent,
+              ),
+            ),
+            // Dialog content
+            Center(
+              child: Dialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Settings',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      // Theme Switch Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            ThemeController.instance.toggle();
+                          },
+                          icon: Icon(
+                            ThemeController.instance.isDark
+                                ? Icons.light_mode
+                                : Icons.dark_mode,
+                          ),
+                          label: Text(
+                            ThemeController.instance.isDark
+                                ? 'Switch to Light Mode'
+                                : 'Switch to Dark Mode',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Logout Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            _logout(context);
+                          },
+                          icon: const Icon(Icons.logout),
+                          label: const Text('Log out'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Cancel Button
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -171,28 +268,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
               },
             ),
           IconButton(
-            tooltip: ThemeController.instance.isDark
-                ? 'Light mode'
-                : 'Dark mode',
-            icon: Icon(
-              ThemeController.instance.isDark
-                  ? Icons.light_mode
-                  : Icons.dark_mode,
-            ),
-            onPressed: () => ThemeController.instance.toggle(),
+            tooltip: 'Settings',
+            icon: const Icon(Icons.more_vert),
+            onPressed: () => _showSettingsModal(context),
           ),
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Stack(
-              children: [
-                SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                           const SizedBox(height: 8),
                           Center(
@@ -212,34 +301,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       width: 1.5,
                                     ),
                                   ),
-                                  child: CircleAvatar(
-                                    radius: 40,
-                                    backgroundColor: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withOpacity(0.1),
-                                    backgroundImage: _newProfileImage != null
-                                        ? FileImage(_newProfileImage!)
-                                        : (_currentProfileImageUrl != null &&
-                                              _currentProfileImageUrl!
-                                                  .isNotEmpty)
-                                        ? NetworkImage(_currentProfileImageUrl!)
-                                              as ImageProvider
-                                        : null,
-                                    child:
-                                        (_newProfileImage == null &&
-                                            (_currentProfileImageUrl == null ||
-                                                _currentProfileImageUrl!
-                                                    .isEmpty))
-                                        ? Icon(
-                                            Icons.person,
-                                            size: 36,
-                                            color:
-                                                Theme.of(context).brightness ==
-                                                    Brightness.dark
-                                                ? Colors.white
-                                                : Colors.black,
-                                          )
-                                        : null,
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 40,
+                                        backgroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface.withOpacity(0.1),
+                                        backgroundImage: _newProfileImage != null
+                                            ? FileImage(_newProfileImage!)
+                                            : (_currentProfileImageUrl != null &&
+                                                  _currentProfileImageUrl!
+                                                      .isNotEmpty)
+                                            ? NetworkImage(_currentProfileImageUrl!)
+                                                  as ImageProvider
+                                            : null,
+                                        child:
+                                            (_newProfileImage == null &&
+                                                (_currentProfileImageUrl == null ||
+                                                    _currentProfileImageUrl!
+                                                        .isEmpty))
+                                            ? Icon(
+                                                Icons.person,
+                                                size: 36,
+                                                color:
+                                                    Theme.of(context).brightness ==
+                                                        Brightness.dark
+                                                    ? Colors.white
+                                                    : Colors.black,
+                                              )
+                                            : null,
+                                      ),
+                                      // Green indicator
+                                      Positioned(
+                                        right: 0,
+                                        bottom: 0,
+                                        child: Container(
+                                          width: 18,
+                                          height: 18,
+                                          decoration: BoxDecoration(
+                                            color: Colors.green,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: Theme.of(context).scaffoldBackgroundColor,
+                                              width: 2,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 if (_isEditing)
@@ -282,54 +393,86 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             ),
                             const SizedBox(height: 8),
+                            // Name (editable)
+                            TextFormField(
+                              controller: _nameController,
+                              enabled: _isEditing,
+                              style: const TextStyle(fontSize: 14),
+                              decoration: InputDecoration(
+                                labelText: 'Full Name',
+                                labelStyle: const TextStyle(fontSize: 14),
+                                prefixIcon: const Icon(Icons.person_outline, size: 20),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                filled: true,
+                                fillColor: Theme.of(
+                                  context,
+                                ).inputDecorationTheme.fillColor,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              ),
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) {
+                                  return 'Please enter your name';
+                                }
+                                if (v.trim().length < 2) {
+                                  return 'Name must be at least 2 characters';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            // Email (read-only)
+                            TextFormField(
+                              controller: _emailController,
+                              enabled: false,
+                              style: const TextStyle(fontSize: 14),
+                              decoration: InputDecoration(
+                                labelText: 'Email',
+                                labelStyle: const TextStyle(fontSize: 14),
+                                prefixIcon: const Icon(Icons.email_outlined, size: 20),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                filled: true,
+                                fillColor: Theme.of(
+                                  context,
+                                ).inputDecorationTheme.fillColor,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ] else ...[
+                            // Name and Email as plain text when not editing
+                            Center(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.person_outline, size: 20),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    _nameController.text.isEmpty ? 'No name set' : _nameController.text,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Center(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.email_outlined, size: 20),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    _emailController.text.isEmpty ? 'No email' : _emailController.text,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
                           ],
-                          // Name (editable)
-                          TextFormField(
-                            controller: _nameController,
-                            enabled: _isEditing,
-                            style: const TextStyle(fontSize: 14),
-                            decoration: InputDecoration(
-                              labelText: 'Full Name',
-                              labelStyle: const TextStyle(fontSize: 14),
-                              prefixIcon: const Icon(Icons.person_outline, size: 20),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              filled: true,
-                              fillColor: Theme.of(
-                                context,
-                              ).inputDecorationTheme.fillColor,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            ),
-                            validator: (v) {
-                              if (v == null || v.trim().isEmpty)
-                                return 'Please enter your name';
-                              if (v.trim().length < 2)
-                                return 'Name must be at least 2 characters';
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          // Email (read-only)
-                          TextFormField(
-                            controller: _emailController,
-                            enabled: false,
-                            style: const TextStyle(fontSize: 14),
-                            decoration: InputDecoration(
-                              labelText: 'Email',
-                              labelStyle: const TextStyle(fontSize: 14),
-                              prefixIcon: const Icon(Icons.email_outlined, size: 20),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              filled: true,
-                              fillColor: Theme.of(
-                                context,
-                              ).inputDecorationTheme.fillColor,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
                           // Saved Posts Section
                           const Divider(height: 24),
                           const Text(
@@ -341,53 +484,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const SizedBox(height: 12),
                           _SavedPostsList(uid: AuthService.currentUser?.uid ?? ''),
-                          const SizedBox(height: 100), // Space for floating button
+                          const SizedBox(height: 16),
                         ],
                       ),
                     ),
-                  ),
-                // Floating logout button - positioned at very edge of footer
-                Positioned(
-                  bottom: -MediaQuery.of(context).padding.bottom,
-                  right: 16,
-                  child: Material(
-                    elevation: 6,
-                    borderRadius: BorderRadius.circular(28),
-                    color: Colors.black,
-                    child: InkWell(
-                      onTap: () => _logout(context),
-                      borderRadius: BorderRadius.circular(28),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(28),
-                          color: Colors.black,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.logout,
-                              size: 20,
-                              color: Colors.white,
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Log out',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
     );
   }
 }
@@ -433,7 +534,12 @@ class _SavedPostsList extends StatelessWidget {
                 return const Center(child: CircularProgressIndicator());
               }
               final allDocs = itemsSnap.data?.docs ?? [];
-              final docs = allDocs.where((doc) => savedPosts.contains(doc.id)).toList();
+              // Filter out claimed items - they should only appear in transactions history
+              final docs = allDocs.where((doc) {
+                final isSaved = savedPosts.contains(doc.id);
+                final status = (doc.data()['status'] as String?) ?? '';
+                return isSaved && status != 'claimed';
+              }).toList();
               return _buildPostList(docs);
             },
           );
@@ -448,7 +554,12 @@ class _SavedPostsList extends StatelessWidget {
               if (itemsSnap.connectionState != ConnectionState.active) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final docs = itemsSnap.data?.docs ?? [];
+              final allDocs = itemsSnap.data?.docs ?? [];
+              // Filter out claimed items - they should only appear in transactions history
+              final docs = allDocs.where((doc) {
+                final status = (doc.data()['status'] as String?) ?? '';
+                return status != 'claimed';
+              }).toList();
               return _buildPostList(docs);
             },
           );

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'chats_screen.dart';
 import '../widgets/post_card.dart';
+import '../widgets/unread_messages_badge.dart';
 
 class FoundItemsScreen extends StatefulWidget {
   const FoundItemsScreen({super.key});
@@ -76,22 +76,14 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
         ),
         centerTitle: true,
         actions: [
-          IconButton(
-            tooltip: 'Messages',
+          UnreadMessagesBadge(
+            iconPath: 'assets/icons/messenger.svg',
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const ChatsScreen()),
               );
             },
-            icon: SvgPicture.asset(
-              'assets/icons/messenger.svg',
-              width: 24,
-              height: 24,
-              colorFilter: ColorFilter.mode(
-                Theme.of(context).iconTheme.color ?? Colors.black,
-                BlendMode.srcIn,
-              ),
-            ),
+            iconSize: 24,
           ),
           const SizedBox(width: 6),
         ],
@@ -103,7 +95,13 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           final docs = snap.data?.docs ?? [];
-          final filtered = docs.where((d) {
+          // Filter out claimed items - they should only appear in transactions history
+          final unclaimedDocs = docs.where((d) {
+            final status = (d.data()['status'] as String?) ?? '';
+            return status != 'claimed';
+          }).toList();
+          
+          final filtered = unclaimedDocs.where((d) {
             final title = (d.data()['title'] as String?) ?? '';
             return title.toLowerCase().contains(_query.toLowerCase());
           }).toList();

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -102,9 +103,45 @@ class AuthService {
         };
       }
 
-      // Get user data from Firestore
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
-      final userData = userDoc.data();
+      // Get user data from Firestore - try users collection first, then admins collection
+      Map<String, dynamic>? userData;
+      try {
+        final userDoc = await _firestore.collection('users').doc(user.uid).get();
+        userData = userDoc.data();
+        
+        // If not found in users, try admins collection
+        if (userData == null || userData.isEmpty) {
+          print('User not found in users collection, checking admins collection...');
+          try {
+            final adminDoc = await _firestore.collection('admins').doc(user.uid).get();
+            userData = adminDoc.data();
+            if (userData != null) {
+              userData['isAdmin'] = true; // Ensure admin flag is set
+            }
+          } catch (_) {
+            print('Admin document also not found, proceeding with null userData');
+          }
+        }
+      } catch (e) {
+        print('Error fetching user data: $e');
+        // Continue with null userData - logging will handle it
+      }
+      
+      // Create login log - ensure this happens for all successful logins
+      // Use await to ensure log is created before returning success
+      try {
+        print('Attempting to create login log for user: ${user.uid}, email: ${user.email}');
+        await _createLoginLog(user.uid, user.email ?? '', userData);
+        print('Login log creation completed successfully for: ${user.email}');
+      } catch (e, stackTrace) {
+        // Log error but don't fail the login process
+        print('ERROR: Failed to create login log during login: $e');
+        print('Stack trace: $stackTrace');
+        // Try to create log again in background
+        _createLoginLog(user.uid, user.email ?? '', userData).catchError((err) {
+          print('Background log creation also failed: $err');
+        });
+      }
 
       return {
         'success': true,
@@ -193,7 +230,7 @@ class AuthService {
       return {
         'success': true,
         'message':
-            'Registration successful. Check your email for the verification link.${profileWriteWarning != null ? profileWriteWarning : ''}',
+            'Registration successful. Check your email for the verification link.${profileWriteWarning ?? ''}',
         'user': {
           'id': user.uid,
           'email': user.email,
@@ -389,6 +426,93 @@ class AuthService {
       return role.toLowerCase() == 'admin' || isAdmin;
     } catch (_) {
       return false;
+    }
+  }
+
+  // Helper method to create login logs reliably for all users and admins
+  static Future<void> _createLoginLog(
+    String userId,
+    String userEmail,
+    Map<String, dynamic>? userData,
+  ) async {
+    try {
+      print('=== CREATE LOGIN LOG START ===');
+      print('userId: $userId');
+      print('userEmail: $userEmail');
+      print('userData: $userData');
+      
+      // Extract user name from various possible fields
+      final userName = (userData?['name'] as String?)?.trim() ?? 
+                      (userData?['fullName'] as String?)?.trim() ??
+                      (userData?['displayName'] as String?)?.trim() ??
+                      'Unknown User';
+      
+      // Determine if user is admin - use same logic as currentUserIsAdmin()
+      bool isAdmin = false;
+      if (userData != null) {
+        final role = (userData['role'] as String?) ?? '';
+        final isAdminFlag = (userData['isAdmin'] as bool?) ?? false;
+        isAdmin = role.toLowerCase() == 'admin' || isAdminFlag;
+        print('Admin check from userData - role: $role, isAdmin flag: $isAdminFlag, result: $isAdmin');
+      }
+      
+      // Also check by calling currentUserIsAdmin if userData didn't indicate admin
+      // This ensures we use the exact same logic as the rest of the app
+      if (!isAdmin) {
+        try {
+          // Check if user exists in users collection and is admin (same as currentUserIsAdmin)
+          final userDoc = await _firestore.collection('users').doc(userId).get();
+          if (userDoc.exists) {
+            final data = userDoc.data();
+            if (data != null) {
+              final role = (data['role'] as String?) ?? '';
+              final isAdminFlag = (data['isAdmin'] as bool?) ?? false;
+              isAdmin = role.toLowerCase() == 'admin' || isAdminFlag;
+              print('Admin check from users collection - role: $role, isAdmin flag: $isAdminFlag, result: $isAdmin');
+            }
+          }
+        } catch (e) {
+          print('Error checking admin status in users collection: $e');
+          // Ignore errors when checking users collection
+        }
+      }
+      
+      final userType = isAdmin ? 'admin' : 'user';
+      print('Creating login log for: $userName ($userEmail) - Type: $userType');
+      
+      // Prepare log data
+      final logData = <String, dynamic>{
+        'userId': userId,
+        'userEmail': userEmail.trim().isEmpty ? 'No email' : userEmail.trim(),
+        'userName': userName,
+        'userType': userType,
+        'timestamp': FieldValue.serverTimestamp(),
+        'loginDate': DateTime.now().toIso8601String(), // Backup timestamp for reliability
+      };
+      
+      print('Log data: $logData');
+      
+      // Create login log document in Firestore
+      final docRef = await _firestore.collection('loginLogs').add(logData);
+      
+      print('Login log created successfully with ID: ${docRef.id}');
+      print('=== CREATE LOGIN LOG END ===');
+      
+      // Verify the log was created by reading it back
+      final verifyDoc = await docRef.get();
+      if (verifyDoc.exists) {
+        print('Login log verified: ${verifyDoc.data()}');
+      } else {
+        print('WARNING: Login log was not found after creation!');
+      }
+    } catch (e, stackTrace) {
+      // Log error but don't fail the login process
+      // This ensures users can still log in even if logging fails
+      print('ERROR: Failed to create login log: $e');
+      print('Error type: ${e.runtimeType}');
+      print('Stack trace: $stackTrace');
+      // Re-throw to allow caller to handle
+      rethrow;
     }
   }
 }

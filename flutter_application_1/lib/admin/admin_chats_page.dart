@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../screens/messages_screen.dart';
+import '../widgets/profile_avatar.dart';
 
 class AdminChatsPage extends StatefulWidget {
   final FirebaseFirestore firestore;
@@ -32,6 +33,10 @@ class _AdminChatsPageState extends State<AdminChatsPage> {
         .snapshots();
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Messages'),
+        elevation: 0,
+      ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: chatsQuery,
         builder: (context, snap) {
@@ -102,7 +107,7 @@ class _ChatsListState extends State<_ChatsList> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: Container(
@@ -134,12 +139,16 @@ class _ChatsListState extends State<_ChatsList> {
           const Expanded(child: Center(child: Text('No conversations yet')))
         else
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+            child: ListView.builder(
+              padding: EdgeInsets.only(
+                top: 8,
+                bottom: MediaQuery.of(context).padding.bottom + kBottomNavigationBarHeight,
+              ),
               itemCount: sorted.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
               itemBuilder: (context, index) {
-                final data = sorted[index].data();
+                final chatDoc = sorted[index];
+                final chatId = chatDoc.id;
+                final data = chatDoc.data();
                 final users = (data['users'] as List?)?.cast<String>() ?? [];
                 final peerId = users.firstWhere((u) => u != widget.uid, orElse: () => '');
                 final last = (data['lastMessage'] as String?)?.trim() ?? '';
@@ -147,52 +156,181 @@ class _ChatsListState extends State<_ChatsList> {
                 final timeStr = ts == null
                     ? ''
                     : TimeOfDay.fromDateTime(ts.toDate().toLocal()).format(context);
+                final lastViewedAt = (data['lastViewedAt_${widget.uid}'] as Timestamp?);
 
-                return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                  stream: widget.firestore.collection('users').doc(peerId).snapshots(),
-                  builder: (context, userSnap) {
-                    final u = userSnap.data?.data() ?? const {};
-                    final rawName = (u['name'] as String?)?.trim() ?? '';
-                    final name = rawName.isNotEmpty ? rawName : ((u['fullName'] as String?)?.trim() ?? 'User');
-                    final avatar = (u['profileImageUrl'] as String?)?.trim() ?? '';
-                    if (query.isNotEmpty && !name.toLowerCase().contains(query)) {
-                      return const SizedBox.shrink();
+                // Get stored peer info from chat document, with fallback to users collection
+                final storedName = (data['peerName_$peerId'] as String?)?.trim();
+                final storedAvatar = (data['peerAvatar_$peerId'] as String?)?.trim();
+                
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: widget.firestore
+                      .collection('chats')
+                      .doc(chatId)
+                      .collection('messages')
+                      .orderBy('createdAt', descending: true)
+                      .limit(1)
+                      .snapshots(),
+                  builder: (context, lastMsgSnap) {
+                    // Get the last message to check sender
+                    String lastMessageSender = '';
+                    Timestamp? lastMessageTime;
+                    if (lastMsgSnap.hasData && lastMsgSnap.data!.docs.isNotEmpty) {
+                      final lastMsg = lastMsgSnap.data!.docs.first.data();
+                      lastMessageSender = (lastMsg['senderId'] as String?) ?? '';
+                      lastMessageTime = lastMsg['createdAt'] as Timestamp?;
                     }
-                    if (peerId.isEmpty) {
-                      return const SizedBox.shrink();
-                    }
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      leading: CircleAvatar(
-                        radius: 24,
-                        backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
-                        child: avatar.isEmpty ? const Icon(Icons.person) : null,
-                      ),
-                      title: Text(
-                        name,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        last.isNotEmpty ? last : 'Say hi 👋',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(timeStr, style: Theme.of(context).textTheme.bodySmall),
-                        ],
-                      ),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => MessagesScreen(
-                              peerUserId: peerId,
-                              initialName: name,
-                              initialAvatarUrl: avatar,
-                            ),
-                          ),
+                    
+                    final isLastMessageFromMe = lastMessageSender == widget.uid;
+                    
+                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: lastViewedAt != null && lastMessageTime != null
+                          ? widget.firestore
+                              .collection('chats')
+                              .doc(chatId)
+                              .collection('messages')
+                              .where('createdAt', isGreaterThan: lastViewedAt)
+                              .snapshots()
+                          : widget.firestore
+                              .collection('chats')
+                              .doc(chatId)
+                              .collection('messages')
+                              .snapshots(),
+                      builder: (context, unreadSnap) {
+                        // Count unread messages from others (not from current user)
+                        int unreadCount = 0;
+                        if (unreadSnap.hasData) {
+                          unreadCount = unreadSnap.data!.docs.where((doc) {
+                            final msgData = doc.data();
+                            final senderId = msgData['senderId'] as String?;
+                            // Only count messages from other users (not from current user)
+                            return senderId != null && senderId != widget.uid;
+                          }).length;
+                        }
+                        
+                        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                          stream: widget.firestore.collection('users').doc(peerId).snapshots(),
+                          builder: (context, userSnap) {
+                            // Use stored values first, then fallback to user document, then to defaults
+                            final u = userSnap.data?.data() ?? const {};
+                            String name;
+                            String avatar;
+                            
+                            if (storedName != null && storedName.isNotEmpty) {
+                              name = storedName;
+                            } else {
+                              final rawName = (u['name'] as String?)?.trim() ?? '';
+                              name = rawName.isNotEmpty ? rawName : ((u['fullName'] as String?)?.trim() ?? 'User');
+                            }
+                            
+                            if (storedAvatar != null && storedAvatar.isNotEmpty) {
+                              avatar = storedAvatar;
+                            } else {
+                              avatar = (u['profileImageUrl'] as String?)?.trim() ?? '';
+                            }
+                            
+                            if (query.isNotEmpty && !name.toLowerCase().contains(query)) {
+                              return const SizedBox.shrink();
+                            }
+                            if (peerId.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
+                            
+                            // Determine subtitle text and styling based on seen/unseen status
+                            String subtitleText;
+                            TextStyle subtitleStyle;
+                            bool hasUnread = unreadCount > 0;
+                            
+                            if (isLastMessageFromMe) {
+                              // Message sent by current user (admin)
+                              if (last.contains('[photo]')) {
+                                subtitleText = 'You sent a photo.';
+                              } else if (last.contains('[video]')) {
+                                subtitleText = 'You sent a video.';
+                              } else if (last.isNotEmpty) {
+                                subtitleText = 'You: $last';
+                              } else {
+                                subtitleText = 'Say hi 👋';
+                              }
+                              // Seen messages: normal/faded style
+                              subtitleStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Colors.grey.shade600,
+                                fontWeight: FontWeight.normal,
+                              ) ?? TextStyle(color: Colors.grey.shade600);
+                            } else {
+                              // Message received from peer
+                              if (hasUnread) {
+                                // Unread: show count and bold text
+                                subtitleText = unreadCount == 1 
+                                    ? (last.isNotEmpty ? last : 'Say hi 👋')
+                                    : '$unreadCount new messages';
+                                subtitleStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                ) ?? TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                );
+                              } else {
+                                // Read: normal text
+                                subtitleText = last.isNotEmpty ? last : 'Say hi 👋';
+                                subtitleStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: Colors.grey.shade600,
+                                  fontWeight: FontWeight.normal,
+                                ) ?? TextStyle(color: Colors.grey.shade600);
+                              }
+                            }
+                            
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              leading: ProfileAvatar(
+                                radius: 24,
+                                imageUrl: avatar.isNotEmpty ? avatar : null,
+                                displayName: null,
+                              ),
+                              title: Text(
+                                name,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w600,
+                                  color: hasUnread 
+                                      ? Theme.of(context).colorScheme.onSurface 
+                                      : Theme.of(context).colorScheme.onSurface.withOpacity(0.9),
+                                ),
+                              ),
+                              subtitle: Text(
+                                subtitleText,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: subtitleStyle,
+                              ),
+                              trailing: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    timeStr, 
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: hasUnread 
+                                          ? Theme.of(context).colorScheme.primary 
+                                          : Colors.grey.shade600,
+                                      fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => MessagesScreen(
+                                      peerUserId: peerId,
+                                      initialName: name,
+                                      initialAvatarUrl: avatar,
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
                         );
                       },
                     );

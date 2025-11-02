@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../screens/messages_screen.dart';
+import 'profile_avatar.dart';
 // messages icon removed from PostCard
 
 class PostCard extends StatelessWidget {
@@ -64,23 +65,10 @@ class PostCard extends StatelessWidget {
                     
                     return Row(
                       children: [
-                        CircleAvatar(
+                        ProfileAvatar(
                           radius: 18,
-                          backgroundImage: avatar.isNotEmpty
-                              ? NetworkImage(avatar)
-                              : null,
-                          onBackgroundImageError: (_, __) {},
-                          child: avatar.isEmpty
-                              ? (displayName.isNotEmpty
-                                  ? Text(
-                                      displayName[0].toUpperCase(),
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    )
-                                  : const Icon(Icons.person, size: 18))
-                              : null,
+                          imageUrl: avatar.isNotEmpty ? avatar : null,
+                          displayName: displayName.isNotEmpty ? displayName : null,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -206,9 +194,9 @@ class PostCard extends StatelessWidget {
   Widget _buildFallbackUserRow(BuildContext context, String fallbackName) {
     return Row(
       children: [
-        const CircleAvatar(
+        ProfileAvatar(
           radius: 18,
-          child: Icon(Icons.person, size: 18),
+          displayName: null,
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -257,17 +245,10 @@ class PostCard extends StatelessWidget {
     final avatar = avatarUrl.trim();
     return Row(
       children: [
-        CircleAvatar(
+        ProfileAvatar(
           radius: 18,
-          backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
-          child: avatar.isEmpty
-              ? (displayName.isNotEmpty
-                  ? Text(
-                      displayName[0].toUpperCase(),
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    )
-                  : const Icon(Icons.person, size: 18))
-              : null,
+          imageUrl: avatar.isNotEmpty ? avatar : null,
+          displayName: displayName.isNotEmpty ? displayName : null,
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -308,6 +289,10 @@ class PostCard extends StatelessWidget {
       ],
     );
   }
+}
+
+String _formatCommentCount(int count) {
+  return (count < 0 ? 0 : count).toString();
 }
 
 void _showCommentsSheet(BuildContext context, String itemId) {
@@ -359,21 +344,49 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         authorAvatar = ((u['profileImageUrl'] as String?) ?? '').trim();
       } catch (_) {}
 
-      // Add comment to subcollection
+      // Add comment to subcollection with initial like data
       await itemRef.collection('comments').add({
         'text': text,
         'authorId': uid,
         'authorName': authorName,
         'authorAvatar': authorAvatar,
         'createdAt': FieldValue.serverTimestamp(),
+        // Initialize like fields for comments (heart react)
+        'likedBy': <String>[],
+        'likeCount': 0,
       });
 
       // Increment comment count
-      await itemRef.update({'commentCount': FieldValue.increment(1)});
+      // FieldValue.increment works even if the field doesn't exist (initializes to the increment value)
+      try {
+        await itemRef.update({'commentCount': FieldValue.increment(1)});
+      } catch (updateError) {
+        // If increment fails, try to get current count and set it directly
+        print('Error updating comment count: $updateError');
+        try {
+          final currentDoc = await itemRef.get();
+          final currentData = currentDoc.data() ?? {};
+          final currentCount = (currentData['commentCount'] as int?) ?? 0;
+          // Set the new count directly
+          await itemRef.update({'commentCount': currentCount + 1});
+          print('Comment count updated to ${currentCount + 1}');
+        } catch (fallbackError) {
+          print('Failed to update comment count: $fallbackError');
+          // Show error to user so they know something went wrong
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Comment added but count may not update. Error: $fallbackError'),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      }
 
       _commentController.clear();
-      // Scroll to bottom
-      await Future.delayed(const Duration(milliseconds: 200));
+      // Scroll to bottom after a delay to allow comment to appear
+      await Future.delayed(const Duration(milliseconds: 300));
       if (mounted && _listScrollController != null && _listScrollController!.hasClients) {
         _listScrollController!.animateTo(
           _listScrollController!.position.maxScrollExtent,
@@ -387,7 +400,76 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           SnackBar(content: Text('Failed to add comment: $e')),
         );
       }
+      print('Error adding comment: $e');
     }
+  }
+
+  Future<void> _deleteComment(String commentId) async {
+    final itemRef = FirebaseFirestore.instance.collection('items').doc(widget.itemId);
+    try {
+      // Delete the comment
+      await itemRef.collection('comments').doc(commentId).delete();
+
+      // Decrement comment count (but never go below 0)
+      try {
+        // Get current count first to ensure we don't go negative
+        final currentDoc = await itemRef.get();
+        final currentCount = (currentDoc.data()?['commentCount'] as int?) ?? 0;
+        
+        // Only decrement if count is greater than 0, otherwise set to 0
+        if (currentCount > 0) {
+          await itemRef.update({'commentCount': FieldValue.increment(-1)});
+        } else {
+          // Ensure it's 0 if it's already 0 or negative
+          await itemRef.update({'commentCount': 0});
+        }
+      } catch (updateError) {
+        // If comment count update fails, try to set it directly
+        print('Warning: Failed to update comment count: $updateError');
+        try {
+          final currentDoc = await itemRef.get();
+          final currentCount = (currentDoc.data()?['commentCount'] as int?) ?? 0;
+          // Ensure count never goes below 0
+          final newCount = currentCount > 0 ? currentCount - 1 : 0;
+          await itemRef.update({'commentCount': newCount});
+        } catch (_) {
+          print('Warning: Failed to set comment count directly');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete comment: $e')),
+        );
+      }
+      print('Error deleting comment: $e');
+    }
+  }
+
+  void _showDeleteCommentDialog(String commentId, String commentText) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Comment'),
+        content: Text(
+          'Are you sure you want to delete this comment?\n\n"${commentText.length > 50 ? "${commentText.substring(0, 50)}..." : commentText}"',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _deleteComment(commentId);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -403,14 +485,6 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           children: [
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: Theme.of(context).dividerColor,
-                    width: 1,
-                  ),
-                ),
-              ),
               child: Row(
                 children: [
                   const Text(
@@ -452,47 +526,88 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                     padding: const EdgeInsets.all(8),
                     itemCount: docs.length,
                     itemBuilder: (context, index) {
-                      final data = docs[index].data();
+                      final commentDoc = docs[index];
+                      final commentId = commentDoc.id;
+                      final data = commentDoc.data();
                       final text = (data['text'] as String?) ?? '';
                       final authorName = (data['authorName'] as String?) ?? 'User';
                       final authorAvatar = (data['authorAvatar'] as String?) ?? '';
+                      final authorId = (data['authorId'] as String?) ?? '';
                       final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            CircleAvatar(
-                              radius: 18,
-                              backgroundImage: authorAvatar.isNotEmpty ? NetworkImage(authorAvatar) : null,
-                              child: authorAvatar.isEmpty ? const Icon(Icons.person) : null,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    authorName,
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(text, style: const TextStyle(fontSize: 14)),
-                                  if (createdAt != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        _formatTimeAgo(createdAt),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Theme.of(context).textTheme.bodySmall?.color,
-                                        ),
-                                      ),
-                                    ),
-                                ],
+                      final currentUserId = AuthService.currentUser?.uid;
+                      final canDelete = currentUserId != null && currentUserId == authorId;
+                      
+                      return GestureDetector(
+                        onLongPress: canDelete
+                            ? () {
+                                final state = context.findAncestorStateOfType<_CommentsSheetState>();
+                                if (state != null) {
+                                  state._showDeleteCommentDialog(commentId, text);
+                                }
+                              }
+                            : null,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ProfileAvatar(
+                                radius: 18,
+                                imageUrl: authorAvatar.isNotEmpty ? authorAvatar : null,
+                                displayName: null,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      authorName,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(text, style: const TextStyle(fontSize: 14)),
+                                    const SizedBox(height: 4),
+                                    // Like button and count for comments
+                                    Row(
+                                      children: [
+                                        if (createdAt != null)
+                                          Text(
+                                            _formatTimeAgo(createdAt),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Theme.of(context).textTheme.bodySmall?.color,
+                                            ),
+                                          ),
+                                        const SizedBox(width: 12),
+                                        _CommentLikeButton(
+                                          itemId: widget.itemId,
+                                          commentId: commentId,
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Show delete icon if user can delete
+                              if (canDelete)
+                                Builder(
+                                  builder: (builderContext) {
+                                    return IconButton(
+                                      icon: const Icon(Icons.delete_outline, size: 18),
+                                      color: Colors.red.withOpacity(0.7),
+                                      onPressed: () {
+                                        final state = builderContext.findAncestorStateOfType<_CommentsSheetState>();
+                                        if (state != null) {
+                                          state._showDeleteCommentDialog(commentId, text);
+                                        }
+                                      },
+                                      tooltip: 'Delete comment',
+                                    );
+                                  },
+                                ),
+                            ],
+                          ),
                         ),
                       );
                     },
@@ -508,15 +623,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                   16,
                   8 + MediaQuery.of(context).viewInsets.bottom,
                 ),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  border: Border(
-                    top: BorderSide(
-                      color: Theme.of(context).dividerColor,
-                      width: 1,
-                    ),
-                  ),
-                ),
+                color: Theme.of(context).scaffoldBackgroundColor,
                 child: Row(
                   children: [
                     Expanded(
@@ -604,6 +711,83 @@ class _SavedButton extends StatelessWidget {
   }
 }
 
+class _CommentLikeButton extends StatelessWidget {
+  const _CommentLikeButton({
+    required this.itemId,
+    required this.commentId,
+  });
+  final String itemId;
+  final String commentId;
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = AuthService.currentUser?.uid;
+    final commentRef = FirebaseFirestore.instance
+        .collection('items')
+        .doc(itemId)
+        .collection('comments')
+        .doc(commentId);
+    
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: commentRef.snapshots(),
+      builder: (context, snap) {
+        final data = snap.data?.data() ?? {};
+        final likedBy = (data['likedBy'] as List?)?.cast<String>() ?? const <String>[];
+        final isLiked = uid != null && likedBy.contains(uid);
+        // Use stored likeCount if available, otherwise use likedBy array length
+        final storedLikeCount = (data['likeCount'] as int?);
+        final likeCount = storedLikeCount ?? likedBy.length;
+        
+        return InkWell(
+          onTap: uid == null
+              ? null
+              : () async {
+                  try {
+                    if (isLiked) {
+                      // Remove from likedBy array and decrement count
+                      await commentRef.update({
+                        'likedBy': FieldValue.arrayRemove([uid]),
+                        'likeCount': FieldValue.increment(-1),
+                      });
+                    } else {
+                      // Add to likedBy array and increment count
+                      await commentRef.update({
+                        'likedBy': FieldValue.arrayUnion([uid]),
+                        'likeCount': FieldValue.increment(1),
+                      });
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to like comment: $e')),
+                      );
+                    }
+                  }
+                },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isLiked ? Icons.favorite : Icons.favorite_border,
+                size: 16,
+                color: isLiked ? Colors.red : Theme.of(context).iconTheme.color,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                likeCount.toString(),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).textTheme.bodySmall?.color,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _LikeBar extends StatelessWidget {
   const _LikeBar({required this.itemId, required this.postedByUserId});
   final String itemId;
@@ -619,7 +803,9 @@ class _LikeBar extends StatelessWidget {
         final data = snap.data?.data();
         final likedBy = (data?['likedBy'] as List?)?.cast<String>() ?? const <String>[];
         final isLiked = uid != null && likedBy.contains(uid);
-        final likeCount = likedBy.length;
+        // Use stored likeCount if available, otherwise use likedBy array length
+        final storedLikeCount = (data?['likeCount'] as int?);
+        final likeCount = storedLikeCount ?? likedBy.length;
         return Row(
           children: [
             IconButton(
@@ -650,7 +836,7 @@ class _LikeBar extends StatelessWidget {
               icon: const Icon(Icons.chat_bubble_outline, size: 26),
               onPressed: () => _showCommentsSheet(context, itemId),
             ),
-            Text(((data?['commentCount'] as int?) ?? 0).toString()),
+            Text(_formatCommentCount((data?['commentCount'] as int?) ?? 0)),
             // Messenger icon removed per request
             const Spacer(),
             _SavedButton(itemId: itemId),

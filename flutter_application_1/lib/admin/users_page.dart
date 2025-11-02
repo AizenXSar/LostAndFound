@@ -81,8 +81,9 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                   if (filtered.isEmpty) {
                     return const Center(child: Text('No matches'));
                   }
-                  return ListView.separated(
+                  return ListView.builder(
                     padding: const EdgeInsets.all(12),
+                    itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final data = filtered[index].data();
                       final id = filtered[index].id;
@@ -143,8 +144,6 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                         ),
                       );
                     },
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemCount: filtered.length,
                   );
                 },
               );

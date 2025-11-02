@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lottie/lottie.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
@@ -21,6 +24,42 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _hasAgreedToPrivacy = false;
+
+  static const String _privacyAgreedKey = 'privacy_policy_agreed';
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPrivacyAgreement();
+  }
+
+  Future<void> _checkPrivacyAgreement() async {
+    final prefs = await SharedPreferences.getInstance();
+    final agreed = prefs.getBool(_privacyAgreedKey) ?? false;
+    if (!mounted) return;
+    setState(() {
+      _hasAgreedToPrivacy = agreed;
+    });
+    
+    // Show modal automatically on first load if user hasn't agreed
+    if (!agreed && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_hasAgreedToPrivacy) {
+          _showPrivacyPolicyDialog();
+        }
+      });
+    }
+  }
+
+  Future<void> _savePrivacyAgreement(bool agreed) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_privacyAgreedKey, agreed);
+    if (!mounted) return;
+    setState(() {
+      _hasAgreedToPrivacy = agreed;
+    });
+  }
 
   @override
   void dispose() {
@@ -30,6 +69,14 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
+    // Check if user has agreed to privacy policy
+    if (!_hasAgreedToPrivacy) {
+      // Show privacy policy modal - cannot proceed without agreement
+      if (!mounted) return;
+      _showPrivacyPolicyDialog();
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -106,6 +153,32 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _showPrivacyPolicyDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Cannot skip or dismiss without choosing an option
+      builder: (context) => _PrivacyPolicyDialog(
+        onAgree: () async {
+          await _savePrivacyAgreement(true);
+          if (!mounted) return;
+          Navigator.of(context).pop();
+          // After agreeing, user can proceed with login
+        },
+        onDisagree: () {
+          _savePrivacyAgreement(false);
+          // Exit the app immediately without showing any messages
+          if (Platform.isAndroid) {
+            SystemNavigator.pop();
+          } else if (Platform.isIOS) {
+            exit(0);
+          } else {
+            exit(0);
+          }
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -155,6 +228,24 @@ class _LoginScreenState extends State<LoginScreen> {
                     prefixIcon: const Icon(Icons.email_outlined),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        width: 1,
+                        color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        width: 1,
+                        color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        width: 1.5,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                     filled: true,
                     fillColor: Theme.of(context).inputDecorationTheme.fillColor,
@@ -194,6 +285,24 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        width: 1,
+                        color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        width: 1,
+                        color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        width: 1.5,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                     filled: true,
                     fillColor: Theme.of(context).inputDecorationTheme.fillColor,
@@ -275,6 +384,137 @@ class _LoginScreenState extends State<LoginScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PrivacyPolicyDialog extends StatelessWidget {
+  const _PrivacyPolicyDialog({
+    required this.onAgree,
+    required this.onDisagree,
+  });
+  final VoidCallback onAgree;
+  final VoidCallback onDisagree;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Title
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Privacy Policy',
+                textAlign: TextAlign.left,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Policy Text
+            Wrap(
+              children: [
+                Text(
+                  'This app respects and protects user privacy. To provide you with more accurate and personalized services, this app shall use and disclose your information in accordance with this privacy policy. For details, check the ',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Service Agreement - Coming soon')),
+                    );
+                  },
+                  child: Text(
+                    'Service Agreement',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.blue.shade600,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+                Text(
+                  ' and ',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Privacy Policy - Coming soon')),
+                    );
+                  },
+                  child: Text(
+                    'Privacy Policy',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.blue.shade600,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+                Text(
+                  '.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            // AGREE Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: onAgree,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                ),
+                child: const Text(
+                  'AGREE',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // DISAGREE AND EXIT
+            Center(
+              child: GestureDetector(
+                onTap: onDisagree,
+                child: Text(
+                  'DISAGREE AND EXIT',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
