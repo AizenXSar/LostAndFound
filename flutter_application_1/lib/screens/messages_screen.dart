@@ -21,6 +21,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
   final _firestore = FirebaseFirestore.instance;
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _messageFocusNode = FocusNode();
+  final ValueNotifier<bool> _isFocusedNotifier = ValueNotifier<bool>(false);
   final ImagePicker _picker = ImagePicker();
   int _previousMessageCount = 0;
   bool _isInitialLoad = true;
@@ -32,6 +34,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _markChatAsRead();
     // Reset initial load flag when opening chat
     _isInitialLoad = true;
+    // Listen to focus changes
+    _messageFocusNode.addListener(() {
+      _isFocusedNotifier.value = _messageFocusNode.hasFocus;
+    });
   }
 
   static const List<String> _weekdayNames = [
@@ -320,6 +326,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
   void dispose() {
     _textController.dispose();
     _scrollController.dispose();
+    _messageFocusNode.dispose();
+    _isFocusedNotifier.dispose();
     super.dispose();
   }
 
@@ -529,6 +537,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
                               Color bubbleColor;
                               Color textColor;
                               
+                              final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+                              
                               if (isMine) {
                                 // Message sent by current user - check if peer has seen it
                                 final peerViewedAt = chatData['lastViewedAt_${widget.peerUserId}'] as Timestamp?;
@@ -545,13 +555,11 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                   isSeen = false;
                                 }
                                 
-                                // Change bubble color when seen (black theme)
-                                if (isSeen) {
-                                  // Seen: lighter black/gray
-                                  bubbleColor = Colors.grey.shade800;
+                                // Sent messages: black in light mode, gray in dark mode
+                                if (isDarkMode) {
+                                  bubbleColor = Colors.grey.shade500;
                                   textColor = Colors.white;
                                 } else {
-                                  // Unseen: black
                                   bubbleColor = Colors.black;
                                   textColor = Colors.white;
                                 }
@@ -562,14 +570,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                     messageTimestamp != null &&
                                     currentUserViewedAt.toDate().isAfter(messageTimestamp.toDate());
                                 
-                                // Change bubble color when seen
-                                if (isSeen) {
-                                  // Seen: lighter gray
-                                  bubbleColor = Colors.grey.shade300;
-                                  textColor = Colors.black87;
+                                // Received messages: gray in light mode, white in dark mode
+                                if (isDarkMode) {
+                                  bubbleColor = Colors.white;
+                                  textColor = Colors.black;
                                 } else {
-                                  // Unseen: normal gray
-                                  bubbleColor = Colors.grey.shade200;
+                                  bubbleColor = Colors.grey.shade300;
                                   textColor = Colors.black;
                                 }
                               }
@@ -700,7 +706,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                                   return Container(
                                                     margin: const EdgeInsets.symmetric(vertical: 4),
                                                     constraints: BoxConstraints(
-                                                      maxWidth: MediaQuery.of(context).size.width * 0.72,
+                                                      // Different maxWidth for sent vs received messages
+                                                      maxWidth: isMine 
+                                                          ? MediaQuery.of(context).size.width * 0.72
+                                                          : MediaQuery.of(context).size.width * 0.65,
                                                     ),
                                                     child: ClipRRect(
                                                       borderRadius: BorderRadius.circular(14),
@@ -716,7 +725,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                                   child: Container(
                                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                                     constraints: BoxConstraints(
-                                                      maxWidth: MediaQuery.of(context).size.width * 0.72,
+                                                      // Different maxWidth for sent vs received messages
+                                                      maxWidth: isMine 
+                                                          ? MediaQuery.of(context).size.width * 0.72
+                                                          : MediaQuery.of(context).size.width * 0.65,
                                                     ),
                                                     decoration: BoxDecoration(
                                                       color: bubbleColor,
@@ -882,142 +894,169 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    // Icon group (left side) - compressed when message expands
-                    ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: _textController,
-                      builder: (context, value, child) {
-                        // Show fewer icons when typing longer messages
-                        final isMultiline = value.text.contains('\n') || value.text.length > 30;
+                    // Icon group (left side) - transforms when focused or typing
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _isFocusedNotifier,
+                      builder: (context, isFocused, _) {
+                        return ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: _textController,
+                          builder: (context, value, child) {
+                            const blueColor = Colors.blue; // Blue color for all icons
+                            const iconSize = 24.0; // Same small size for all icons (+, camera, gallery, mic, arrow)
+                            const iconInnerSize = 16.0; // Same small size for all icon contents
+                            final hasText = value.text.isNotEmpty; // Check for any text, even spaces
+                            // Transform when field is focused OR has text
+                            final shouldTransform = isFocused || hasText;
                         
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Plus icon (black circle with white plus) - always visible
-                            Container(
-                              width: isMultiline ? 32 : 36,
-                              height: isMultiline ? 32 : 36,
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).brightness == Brightness.dark
-                                    ? Colors.white
-                                    : Colors.black,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  customBorder: const CircleBorder(),
-                                  onTap: _pickAndSendMedia,
-                                  child: Icon(
-                                    Icons.add,
-                                    color: Theme.of(context).brightness == Brightness.dark
-                                        ? Colors.black
-                                        : Colors.white,
-                                    size: isMultiline ? 18 : 22,
+                        return AnimatedSize(
+                          duration: const Duration(milliseconds: 150),
+                          curve: Curves.easeInOut,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                            // Plus/Arrow icon - transforms from + to > when typing
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 150),
+                              switchInCurve: Curves.easeInOut,
+                              switchOutCurve: Curves.easeInOut,
+                              child: Container(
+                                key: ValueKey(shouldTransform ? 'arrow' : 'plus'),
+                                width: iconSize,
+                                height: iconSize,
+                                decoration: const BoxDecoration(
+                                  color: blueColor,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    customBorder: const CircleBorder(),
+                                    onTap: shouldTransform 
+                                        ? () {
+                                            // When arrow is clicked, unfocus field and restore original form
+                                            _messageFocusNode.unfocus();
+                                            // Optionally clear text to fully reset
+                                            _textController.clear();
+                                          }
+                                        : _pickAndSendMedia,
+                                    child: Icon(
+                                      shouldTransform ? Icons.arrow_forward : Icons.add,
+                                      color: Colors.white,
+                                      size: iconInnerSize,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                            // Show other icons only when not typing long messages
-                            if (!isMultiline) ...[
-                              const SizedBox(width: 6),
-                              // Camera icon
-                              Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  customBorder: const CircleBorder(),
-                                  onTap: () async {
-                                    final x = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85, maxWidth: 1600);
-                                    if (x == null) return;
-                                    final url = await AuthService.uploadImageToCloudinary(x.path);
-                                    if (url == null) return;
-                                    await _sendMediaMessage(url, 'image');
-                                  },
-                                  child: Container(
-                                    width: 36,
-                                    height: 36,
-                                    alignment: Alignment.center,
-                                    child: Icon(
-                                      Icons.camera_alt_outlined,
-                                      color: Theme.of(context).brightness == Brightness.dark
-                                          ? Colors.white
-                                          : Colors.black,
-                                      size: 22,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              // Gallery icon
-                              Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  customBorder: const CircleBorder(),
-                                  onTap: () async {
-                                    final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600);
-                                    if (x == null) return;
-                                    final url = await AuthService.uploadImageToCloudinary(x.path);
-                                    if (url == null) return;
-                                    await _sendMediaMessage(url, 'image');
-                                  },
-                                  child: Container(
-                                    width: 36,
-                                    height: 36,
-                                    alignment: Alignment.center,
-                                    child: Icon(
-                                      Icons.photo_library_outlined,
-                                      color: Theme.of(context).brightness == Brightness.dark
-                                          ? Colors.white
-                                          : Colors.black,
-                                      size: 22,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              // Microphone icon
-                              Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  customBorder: const CircleBorder(),
-                                  onTap: () {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Voice messages coming soon')),
-                                    );
-                                  },
-                                  child: Container(
-                                    width: 36,
-                                    height: 36,
-                                    alignment: Alignment.center,
-                                    child: Icon(
-                                      Icons.mic_outlined,
-                                      color: Theme.of(context).brightness == Brightness.dark
-                                          ? Colors.white
-                                          : Colors.black,
-                                      size: 22,
-                                    ),
-                                  ),
-                                ),
+                            // Camera, Gallery, Mic icons - hide when focused or typing with smooth animation
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 150),
+                              switchInCurve: Curves.easeInOut,
+                              switchOutCurve: Curves.easeInOut,
+                              child: shouldTransform
+                                  ? const SizedBox.shrink(key: ValueKey('hidden'))
+                                  : Row(
+                                      key: const ValueKey('visible'),
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                          const SizedBox(width: 4),
+                                          // Camera icon (blue)
+                                          Material(
+                                            color: Colors.transparent,
+                                            child: InkWell(
+                                              customBorder: const CircleBorder(),
+                                              onTap: () async {
+                                                final x = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85, maxWidth: 1600);
+                                                if (x == null) return;
+                                                final url = await AuthService.uploadImageToCloudinary(x.path);
+                                                if (url == null) return;
+                                                await _sendMediaMessage(url, 'image');
+                                              },
+                                              child: Container(
+                                                width: iconSize,
+                                                height: iconSize,
+                                                alignment: Alignment.center,
+                                                child: const Icon(
+                                                  Icons.camera_alt_outlined,
+                                                  color: blueColor,
+                                                  size: iconInnerSize,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          // Gallery icon (blue)
+                                          Material(
+                                            color: Colors.transparent,
+                                            child: InkWell(
+                                              customBorder: const CircleBorder(),
+                                              onTap: () async {
+                                                final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600);
+                                                if (x == null) return;
+                                                final url = await AuthService.uploadImageToCloudinary(x.path);
+                                                if (url == null) return;
+                                                await _sendMediaMessage(url, 'image');
+                                              },
+                                              child: Container(
+                                                width: iconSize,
+                                                height: iconSize,
+                                                alignment: Alignment.center,
+                                                child: const Icon(
+                                                  Icons.photo_library_outlined,
+                                                  color: blueColor,
+                                                  size: iconInnerSize,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          // Microphone icon (blue)
+                                          Material(
+                                            color: Colors.transparent,
+                                            child: InkWell(
+                                              customBorder: const CircleBorder(),
+                                              onTap: () {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(content: Text('Voice messages coming soon')),
+                                                );
+                                              },
+                                              child: Container(
+                                                width: iconSize,
+                                                height: iconSize,
+                                                alignment: Alignment.center,
+                                                child: const Icon(
+                                                  Icons.mic_outlined,
+                                                  color: blueColor,
+                                                  size: iconInnerSize,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                               ),
                             ],
-                          ],
+                          ),
+                        );
+                          },
                         );
                       },
                     ),
-                    const SizedBox(width: 8),
-                    // Text input field (light gray rounded) - expands only when typing
+                    const SizedBox(width: 6),
+                    // Text input field (light gray rounded) - expands when typing
                     Expanded(
                       child: ValueListenableBuilder<TextEditingValue>(
                         valueListenable: _textController,
                         builder: (context, value, child) {
                           final isDark = Theme.of(context).brightness == Brightness.dark;
-                          final hasText = value.text.trim().isNotEmpty;
-                          // Only allow expansion when user is typing (has text)
-                          final minLines = hasText ? 1 : 1;
-                          final maxLines = hasText ? 5 : 1; // Expand only when typing
+                          final hasText = value.text.isNotEmpty;
+                          // Allow expansion when user is typing
+                          final maxLines = hasText ? 6 : 1;
                           
                           return TextField(
                             controller: _textController,
-                            minLines: minLines,
+                            focusNode: _messageFocusNode,
+                            minLines: 1,
                             maxLines: maxLines,
                             textAlignVertical: TextAlignVertical.center,
                             textInputAction: hasText ? TextInputAction.newline : TextInputAction.send,
@@ -1032,14 +1071,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
                               fontSize: 15,
                             ),
                             decoration: InputDecoration(
-                              hintText: 'Message...',
+                              hintText: 'Type a message...',
                               hintStyle: TextStyle(
                                 color: isDark ? Colors.grey.shade500 : Colors.grey.shade600,
                                 fontSize: 15,
                               ),
                               filled: true,
                               fillColor: isDark
-                                  ? Colors.grey.shade900.withOpacity(0.5)
+                                  ? Colors.grey.shade800
                                   : Colors.grey.shade200,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(20),
@@ -1064,11 +1103,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                     width: 36,
                                     height: 36,
                                     alignment: Alignment.center,
-                                    child: Icon(
+                                    child: const Icon(
                                       Icons.mood_outlined,
-                                      color: Theme.of(context).brightness == Brightness.dark
-                                          ? Colors.white
-                                          : Colors.black,
+                                      color: Colors.blue,
                                       size: 20,
                                     ),
                                   ),
@@ -1103,9 +1140,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                               alignment: Alignment.center,
                               child: Icon(
                                 hasText ? Icons.send : Icons.thumb_up,
-                                color: Theme.of(context).brightness == Brightness.dark
-                                    ? Colors.white
-                                    : Colors.black,
+                                color: Colors.blue,
                                 size: 22,
                               ),
                             ),

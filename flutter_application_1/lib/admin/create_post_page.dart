@@ -224,22 +224,34 @@ class _CreatePostPageState extends State<CreatePostPage> {
     }
   }
 
-  InputDecoration _buildInputDecoration() {
+  InputDecoration _buildInputDecoration(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final fillColor = isDark 
+        ? theme.colorScheme.surfaceContainerHighest 
+        : Colors.white;
+    final borderColor = isDark 
+        ? theme.colorScheme.outline.withOpacity(0.3)
+        : Colors.grey[300]!;
+    final focusedBorderColor = isDark 
+        ? theme.colorScheme.primary.withOpacity(0.5)
+        : Colors.grey[400]!;
+    
     return InputDecoration(
       filled: true,
-      fillColor: Colors.white,
+      fillColor: fillColor,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
-        borderSide: BorderSide(color: Colors.grey[300]!, width: 0.5),
+        borderSide: BorderSide(color: borderColor, width: 0.5),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
-        borderSide: BorderSide(color: Colors.grey[300]!, width: 0.5),
+        borderSide: BorderSide(color: borderColor, width: 0.5),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
-        borderSide: BorderSide(color: Colors.grey[400]!, width: 0.5),
+        borderSide: BorderSide(color: focusedBorderColor, width: 0.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
@@ -290,14 +302,12 @@ class _CreatePostPageState extends State<CreatePostPage> {
               const SizedBox(height: 24),
               Text(
                 'Title',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.black,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _titleController,
-                decoration: _buildInputDecoration(),
+                decoration: _buildInputDecoration(context),
                 validator: (v) => (v == null || v.trim().isEmpty)
                     ? 'Title required'
                     : null,
@@ -305,28 +315,24 @@ class _CreatePostPageState extends State<CreatePostPage> {
               const SizedBox(height: 20),
               Text(
                 'Description',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.black,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _descriptionController,
                 minLines: 2,
                 maxLines: 5,
-                decoration: _buildInputDecoration(),
+                decoration: _buildInputDecoration(context),
               ),
               const SizedBox(height: 20),
               Text(
                 'Location',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.black,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _locationController,
-                decoration: _buildInputDecoration(),
+                decoration: _buildInputDecoration(context),
               ),
               const SizedBox(height: 20),
               Row(
@@ -337,49 +343,66 @@ class _CreatePostPageState extends State<CreatePostPage> {
                       children: [
                         Text(
                           'Date',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.black,
-                          ),
+                          style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 8),
-                        OutlinedButton(
-                          onPressed: () async {
-                            final now = DateTime.now();
-                            final picked = await showDatePicker(
-                              context: context,
-                              initialDate: _date ?? now,
-                              firstDate: DateTime(now.year - 2),
-                              lastDate: DateTime(now.year + 2),
-                            );
-                            if (picked != null) {
-                              setState(() => _date = picked);
-                            }
-                          },
-                          style: OutlinedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            side: BorderSide(color: Colors.grey[300]!, width: 0.5),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.event, size: 18, color: Colors.grey[700]),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _date == null
-                                      ? 'Date'
-                                      : _date!.toLocal().toString().split(' ').first,
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Colors.grey[800],
-                                  ),
+                        Builder(
+                          builder: (context) {
+                            final theme = Theme.of(context);
+                            final isDark = theme.brightness == Brightness.dark;
+                            final bgColor = isDark 
+                                ? theme.colorScheme.surfaceContainerHighest 
+                                : Colors.white;
+                            final borderColor = isDark 
+                                ? theme.colorScheme.outline.withOpacity(0.3)
+                                : Colors.grey[300]!;
+                            final iconColor = isDark 
+                                ? theme.colorScheme.onSurface 
+                                : Colors.grey[700]!;
+                            final textColor = isDark 
+                                ? theme.colorScheme.onSurface 
+                                : Colors.grey[800]!;
+                            
+                            return OutlinedButton(
+                              onPressed: () async {
+                                final now = DateTime.now();
+                                final picked = await showDatePicker(
+                                  context: context,
+                                  initialDate: _date ?? now,
+                                  firstDate: DateTime(now.year - 2),
+                                  lastDate: DateTime(now.year + 2),
+                                );
+                                if (picked != null) {
+                                  setState(() => _date = picked);
+                                }
+                              },
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: bgColor,
+                                side: BorderSide(color: borderColor, width: 0.5),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6),
                                 ),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                               ),
-                            ],
-                          ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.event, size: 18, color: iconColor),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _date == null
+                                          ? 'Date'
+                                          : _date!.toLocal().toString().split(' ').first,
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: textColor,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -391,47 +414,70 @@ class _CreatePostPageState extends State<CreatePostPage> {
                       children: [
                         Text(
                           'Status',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.black,
-                          ),
+                          style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
-                          value: _status,
-                          icon: Icon(Icons.arrow_drop_down_rounded, size: 20, color: Colors.grey[700]),
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey[800],
-                          ),
-                          dropdownColor: Colors.white,
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: Colors.white,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(6),
-                              borderSide: BorderSide(color: Colors.grey[300]!, width: 0.5),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(6),
-                              borderSide: BorderSide(color: Colors.grey[300]!, width: 0.5),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(6),
-                              borderSide: BorderSide(color: Colors.grey[400]!, width: 0.5),
-                            ),
-                            floatingLabelBehavior: FloatingLabelBehavior.never,
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'unclaimed',
-                              child: Text('Unclaimed'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'claimed',
-                              child: Text('Claimed'),
-                            ),
-                          ],
-                          onChanged: (v) => setState(() => _status = v ?? 'unclaimed'),
+                        Builder(
+                          builder: (context) {
+                            final theme = Theme.of(context);
+                            final isDark = theme.brightness == Brightness.dark;
+                            final fillColor = isDark 
+                                ? theme.colorScheme.surfaceContainerHighest 
+                                : Colors.white;
+                            final borderColor = isDark 
+                                ? theme.colorScheme.outline.withOpacity(0.3)
+                                : Colors.grey[300]!;
+                            final focusedBorderColor = isDark 
+                                ? theme.colorScheme.primary.withOpacity(0.5)
+                                : Colors.grey[400]!;
+                            final iconColor = isDark 
+                                ? theme.colorScheme.onSurface 
+                                : Colors.grey[700]!;
+                            final textColor = isDark 
+                                ? theme.colorScheme.onSurface 
+                                : Colors.grey[800]!;
+                            final dropdownBg = isDark 
+                                ? theme.colorScheme.surfaceContainerHighest 
+                                : Colors.white;
+                            
+                            return DropdownButtonFormField<String>(
+                              value: _status,
+                              icon: Icon(Icons.arrow_drop_down_rounded, size: 20, color: iconColor),
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: textColor,
+                              ),
+                              dropdownColor: dropdownBg,
+                              decoration: InputDecoration(
+                                filled: true,
+                                fillColor: fillColor,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide(color: borderColor, width: 0.5),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide(color: borderColor, width: 0.5),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide(color: focusedBorderColor, width: 0.5),
+                                ),
+                                floatingLabelBehavior: FloatingLabelBehavior.never,
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'unclaimed',
+                                  child: Text('Unclaimed'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'claimed',
+                                  child: Text('Claimed'),
+                                ),
+                              ],
+                              onChanged: (v) => setState(() => _status = v ?? 'unclaimed'),
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -447,44 +493,61 @@ class _CreatePostPageState extends State<CreatePostPage> {
                       children: [
                         Text(
                           'Time',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.black,
-                          ),
+                          style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 8),
-                        OutlinedButton(
-                          onPressed: () async {
-                            final picked = await showTimePicker(
-                              context: context,
-                              initialTime: _time ?? TimeOfDay.now(),
-                            );
-                            if (picked != null) {
-                              setState(() => _time = picked);
-                            }
-                          },
-                          style: OutlinedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            side: BorderSide(color: Colors.grey[300]!, width: 0.5),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.access_time, size: 18, color: Colors.grey[700]),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _time == null ? 'Time' : _formatTime(_time!),
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Colors.grey[800],
-                                  ),
+                        Builder(
+                          builder: (context) {
+                            final theme = Theme.of(context);
+                            final isDark = theme.brightness == Brightness.dark;
+                            final bgColor = isDark 
+                                ? theme.colorScheme.surfaceContainerHighest 
+                                : Colors.white;
+                            final borderColor = isDark 
+                                ? theme.colorScheme.outline.withOpacity(0.3)
+                                : Colors.grey[300]!;
+                            final iconColor = isDark 
+                                ? theme.colorScheme.onSurface 
+                                : Colors.grey[700]!;
+                            final textColor = isDark 
+                                ? theme.colorScheme.onSurface 
+                                : Colors.grey[800]!;
+                            
+                            return OutlinedButton(
+                              onPressed: () async {
+                                final picked = await showTimePicker(
+                                  context: context,
+                                  initialTime: _time ?? TimeOfDay.now(),
+                                );
+                                if (picked != null) {
+                                  setState(() => _time = picked);
+                                }
+                              },
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: bgColor,
+                                side: BorderSide(color: borderColor, width: 0.5),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6),
                                 ),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                               ),
-                            ],
-                          ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.access_time, size: 18, color: iconColor),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _time == null ? 'Time' : _formatTime(_time!),
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: textColor,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -496,41 +559,64 @@ class _CreatePostPageState extends State<CreatePostPage> {
                       children: [
                         Text(
                           'Type',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.black,
-                          ),
+                          style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
-                          value: _type,
-                          icon: Icon(Icons.arrow_drop_down_rounded, size: 20, color: Colors.grey[700]),
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey[800],
-                          ),
-                          dropdownColor: Colors.white,
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: Colors.white,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(6),
-                              borderSide: BorderSide(color: Colors.grey[300]!, width: 0.5),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(6),
-                              borderSide: BorderSide(color: Colors.grey[300]!, width: 0.5),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(6),
-                              borderSide: BorderSide(color: Colors.grey[400]!, width: 0.5),
-                            ),
-                            floatingLabelBehavior: FloatingLabelBehavior.never,
-                          ),
-                          items: const [
-                            DropdownMenuItem(value: 'lost', child: Text('Lost')),
-                            DropdownMenuItem(value: 'found', child: Text('Found')),
-                          ],
-                          onChanged: (v) => setState(() => _type = v ?? 'lost'),
+                        Builder(
+                          builder: (context) {
+                            final theme = Theme.of(context);
+                            final isDark = theme.brightness == Brightness.dark;
+                            final fillColor = isDark 
+                                ? theme.colorScheme.surfaceContainerHighest 
+                                : Colors.white;
+                            final borderColor = isDark 
+                                ? theme.colorScheme.outline.withOpacity(0.3)
+                                : Colors.grey[300]!;
+                            final focusedBorderColor = isDark 
+                                ? theme.colorScheme.primary.withOpacity(0.5)
+                                : Colors.grey[400]!;
+                            final iconColor = isDark 
+                                ? theme.colorScheme.onSurface 
+                                : Colors.grey[700]!;
+                            final textColor = isDark 
+                                ? theme.colorScheme.onSurface 
+                                : Colors.grey[800]!;
+                            final dropdownBg = isDark 
+                                ? theme.colorScheme.surfaceContainerHighest 
+                                : Colors.white;
+                            
+                            return DropdownButtonFormField<String>(
+                              value: _type,
+                              icon: Icon(Icons.arrow_drop_down_rounded, size: 20, color: iconColor),
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: textColor,
+                              ),
+                              dropdownColor: dropdownBg,
+                              decoration: InputDecoration(
+                                filled: true,
+                                fillColor: fillColor,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide(color: borderColor, width: 0.5),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide(color: borderColor, width: 0.5),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide(color: focusedBorderColor, width: 0.5),
+                                ),
+                                floatingLabelBehavior: FloatingLabelBehavior.never,
+                              ),
+                              items: const [
+                                DropdownMenuItem(value: 'lost', child: Text('Lost')),
+                                DropdownMenuItem(value: 'found', child: Text('Found')),
+                              ],
+                              onChanged: (v) => setState(() => _type = v ?? 'lost'),
+                            );
+                          },
                         ),
                       ],
                     ),

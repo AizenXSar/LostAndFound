@@ -58,22 +58,34 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
     super.dispose();
   }
 
-  InputDecoration _buildInputDecoration() {
+  InputDecoration _buildInputDecoration(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final fillColor = isDark 
+        ? theme.colorScheme.surfaceContainerHighest 
+        : Colors.white;
+    final borderColor = isDark 
+        ? theme.colorScheme.outline.withOpacity(0.3)
+        : Colors.grey[300]!;
+    final focusedBorderColor = isDark 
+        ? theme.colorScheme.primary.withOpacity(0.5)
+        : Colors.grey[400]!;
+    
     return InputDecoration(
       filled: true,
-      fillColor: Colors.white,
+      fillColor: fillColor,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
-        borderSide: BorderSide(color: Colors.grey[300]!, width: 0.5),
+        borderSide: BorderSide(color: borderColor, width: 0.5),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
-        borderSide: BorderSide(color: Colors.grey[300]!, width: 0.5),
+        borderSide: BorderSide(color: borderColor, width: 0.5),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
-        borderSide: BorderSide(color: Colors.grey[400]!, width: 0.5),
+        borderSide: BorderSide(color: focusedBorderColor, width: 0.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
@@ -561,14 +573,12 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
               // Claimer Name
               Text(
                 'Claimer Name *',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.black,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 6),
               TextFormField(
                 controller: _claimerNameController,
-                decoration: _buildInputDecoration(),
+                decoration: _buildInputDecoration(context),
                 validator: (v) => (v == null || v.trim().isEmpty)
                     ? 'Claimer name is required'
                     : null,
@@ -577,15 +587,13 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
               // Claimer Email
               Text(
                 'Claimer Email *',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.black,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 6),
               TextFormField(
                 controller: _claimerEmailController,
                 keyboardType: TextInputType.emailAddress,
-                decoration: _buildInputDecoration(),
+                decoration: _buildInputDecoration(context),
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) {
                     return 'Email is required';
@@ -600,23 +608,19 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
               // Claim Message
               Text(
                 'Claim Message',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.black,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 6),
               TextFormField(
                 controller: _claimMessageController,
                 maxLines: 3,
-                decoration: _buildInputDecoration(),
+                decoration: _buildInputDecoration(context),
               ),
               const SizedBox(height: 16),
               // Proof Image Upload (moved to bottom)
               Text(
                 'Proof Image *',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.black,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 8),
               Center(
