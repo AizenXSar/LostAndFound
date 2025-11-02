@@ -286,6 +286,7 @@ class _ChatsListState extends State<_ChatsList> {
                                 radius: 24,
                                 imageUrl: avatar.isNotEmpty ? avatar : null,
                                 displayName: null,
+                                userId: peerId.isNotEmpty ? peerId : null,
                               ),
                               title: Text(
                                 name,

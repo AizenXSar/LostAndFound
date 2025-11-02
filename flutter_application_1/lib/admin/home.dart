@@ -239,24 +239,42 @@ class _AdminHomePageState extends State<AdminHomePage> {
         ),
       ),
       floatingActionButton: _selectedIndex == 1
-          ? FloatingActionButton.extended(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => CreatePostPage(
-                      firestore: _firestore,
+          ? Transform.scale(
+              scale: 0.75,
+              child: FloatingActionButton.extended(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => CreatePostPage(
+                        firestore: _firestore,
+                      ),
                     ),
+                  );
+                },
+                icon: const Icon(Icons.post_add, size: 20),
+                label: const Text(
+                  'New post',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
-                );
-              },
-              icon: const Icon(Icons.post_add),
-              label: const Text('New post'),
+                ),
+              ),
             )
           : _selectedIndex == 2
-              ? FloatingActionButton.extended(
-                  onPressed: _openNewTransaction ?? () {},
-                  icon: const Icon(Icons.receipt_long),
-                  label: const Text('New Transaction'),
+              ? Transform.scale(
+                  scale: 0.75,
+                  child: FloatingActionButton.extended(
+                    onPressed: _openNewTransaction ?? () {},
+                    icon: const Icon(Icons.receipt_long, size: 20),
+                    label: const Text(
+                      'New Transaction',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 )
               : null,
     );

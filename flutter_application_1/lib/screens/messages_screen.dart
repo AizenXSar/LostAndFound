@@ -30,6 +30,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
   @override
   void initState() {
     super.initState();
+    // Ensure chat document exists when opening screen
+    _ensureChatExists();
     // Mark chat as read when opening the messages screen
     _markChatAsRead();
     // Reset initial load flag when opening chat
@@ -38,6 +40,66 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _messageFocusNode.addListener(() {
       _isFocusedNotifier.value = _messageFocusNode.hasFocus;
     });
+  }
+  
+  Future<void> _ensureChatExists() async {
+    final chatId = _chatId;
+    if (chatId == null || _currentUid == null || widget.peerUserId == null || widget.peerUserId!.isEmpty) return;
+    
+    try {
+      // Check if chat document exists
+      final chatDoc = await _firestore.collection('chats').doc(chatId).get();
+      
+      // If chat doesn't exist, create it with minimal data
+      if (!chatDoc.exists) {
+        // Get peer user info to store permanently in chat - check both users and admins
+        String? peerName;
+        String? peerAvatar;
+        try {
+          // Try users collection first
+          final peerDoc = await _firestore.collection('users').doc(widget.peerUserId).get();
+          final peerData = peerDoc.data();
+          if (peerData != null) {
+            final rawName = (peerData['name'] as String?)?.trim() ?? '';
+            peerName = rawName.isNotEmpty ? rawName : ((peerData['fullName'] as String?)?.trim() ?? '');
+            peerAvatar = (peerData['profileImageUrl'] as String?)?.trim() ?? '';
+          }
+          
+          // If not found in users, try admins collection
+          if (peerAvatar == null || peerAvatar.isEmpty) {
+            try {
+              final adminDoc = await _firestore.collection('admins').doc(widget.peerUserId).get();
+              final adminData = adminDoc.data();
+              if (adminData != null) {
+                if (peerName == null || peerName.isEmpty) {
+                  final rawName = (adminData['name'] as String?)?.trim() ?? '';
+                  peerName = rawName.isNotEmpty ? rawName : ((adminData['fullName'] as String?)?.trim() ?? '');
+                }
+                if (peerAvatar == null || peerAvatar.isEmpty) {
+                  peerAvatar = (adminData['profileImageUrl'] as String?)?.trim() ?? '';
+                }
+              }
+            } catch (_) {}
+          }
+        } catch (_) {}
+        
+        // Use initial values as fallback
+        peerName ??= widget.initialName ?? 'User';
+        peerAvatar ??= widget.initialAvatarUrl ?? '';
+        
+        // Create chat document
+        await _firestore.collection('chats').doc(chatId).set({
+          'users': [_currentUid, widget.peerUserId],
+          'updatedAt': FieldValue.serverTimestamp(),
+          'lastMessage': '',
+          // Store peer user info permanently
+          'peerName_${widget.peerUserId}': peerName,
+          'peerAvatar_${widget.peerUserId}': peerAvatar,
+        }, SetOptions(merge: false));
+      }
+    } catch (e) {
+      print('Error ensuring chat exists: $e');
+    }
   }
 
   static const List<String> _weekdayNames = [
@@ -336,107 +398,75 @@ class _MessagesScreenState extends State<MessagesScreen> {
     final chatId = _chatId;
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 0,
-        title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: (chatId != null && (widget.peerUserId?.isNotEmpty ?? false))
-              ? FirebaseFirestore.instance
-                  .collection('chats')
-                  .doc(chatId)
-                  .snapshots()
-              : const Stream.empty(),
-          builder: (context, chatSnap) {
-            // Get stored peer info from chat document
-            final chatData = chatSnap.data?.data() ?? {};
-            final storedName = (chatData['peerName_${widget.peerUserId}'] as String?)?.trim();
-            final storedAvatar = (chatData['peerAvatar_${widget.peerUserId}'] as String?)?.trim();
-            
-            // Also check users collection as fallback
-            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: (widget.peerUserId?.isNotEmpty ?? false)
-                  ? FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(widget.peerUserId)
-                      .snapshots()
-                  : const Stream.empty(),
-              builder: (context, userSnap) {
-                // Use stored values first, then fallback to user document, then to initial values
-                final u = userSnap.data?.data();
-                String name;
-                String avatar;
-                
-                if (storedName != null && storedName.isNotEmpty) {
-                  name = storedName;
-                } else {
-                  final rawName = (u?['name'] as String?)?.trim() ?? '';
-                  name = rawName.isNotEmpty ? rawName : ((u?['fullName'] as String?)?.trim() ?? (widget.initialName ?? 'User'));
-                }
-                
-                if (storedAvatar != null && storedAvatar.isNotEmpty) {
-                  avatar = storedAvatar;
-                } else {
-                  avatar = (u?['profileImageUrl'] as String?)?.trim() ?? (widget.initialAvatarUrl ?? '');
-                }
-                
-                final email = (u?['email'] as String?) ?? '';
-            return InkWell(
-              onTap: () {
-                if (u == null) return;
-                showModalBottomSheet(
-                  context: context,
-                  shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                  ),
-                  builder: (ctx) {
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          ProfileAvatar(
-                            radius: 36,
-                            imageUrl: avatar.isNotEmpty ? avatar : null,
-                            displayName: null,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                          if (email.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(email, style: Theme.of(context).textTheme.bodySmall),
-                          ],
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
-              child: Row(
-                children: [
-                  const SizedBox(width: 4),
-                  ProfileAvatar(
-                    radius: 16,
-                    imageUrl: avatar.isNotEmpty ? avatar : null,
-                    displayName: null,
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      name,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-            );
-              },
-            );
-          },
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          color: Colors.blue,
+          onPressed: () => Navigator.pop(context),
         ),
+        titleSpacing: 0,
+        title: widget.peerUserId != null && widget.peerUserId!.isNotEmpty
+            ? StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(widget.peerUserId)
+                    .snapshots(),
+                builder: (context, userSnap) {
+                  final u = userSnap.data?.data();
+                  final name = (u?['name'] as String?)?.trim() ?? 
+                               widget.initialName ?? 
+                               'User';
+                  final avatar = (u?['profileImageUrl'] as String?)?.trim() ?? 
+                                 widget.initialAvatarUrl ?? 
+                                 '';
+                  
+                  return Row(
+                    children: [
+                      const SizedBox(width: 8),
+                      ProfileAvatar(
+                        radius: 18,
+                        imageUrl: avatar.isNotEmpty ? avatar : null,
+                        displayName: name,
+                        userId: widget.peerUserId,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          name,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? Colors.white
+                                : Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              )
+            : const SizedBox.shrink(),
         actions: [
-          if (widget.peerUserId != null && widget.peerUserId!.isNotEmpty)
+          if (widget.peerUserId != null && widget.peerUserId!.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.call),
+              color: Colors.blue,
+              tooltip: 'Call',
+              onPressed: () {
+                // TODO: Implement call functionality
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.videocam),
+              color: Colors.blue,
+              tooltip: 'Video Call',
+              onPressed: () {
+                // TODO: Implement video call functionality
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.info_outline),
+              color: Colors.blue,
               tooltip: 'User Information',
               onPressed: () {
                 Navigator.of(context).push(
@@ -450,10 +480,59 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 );
               },
             ),
+          ],
         ],
       ),
       body: Column(
         children: [
+          // Large profile section below AppBar
+          if (widget.peerUserId != null && widget.peerUserId!.isNotEmpty)
+            StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(widget.peerUserId)
+                  .snapshots(),
+              builder: (context, userSnap) {
+                final u = userSnap.data?.data();
+                final name = (u?['name'] as String?)?.trim() ?? 
+                             widget.initialName ?? 
+                             'User';
+                final avatar = (u?['profileImageUrl'] as String?)?.trim() ?? 
+                               widget.initialAvatarUrl ?? 
+                               '';
+                
+                return Container(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Large profile picture
+                      ProfileAvatar(
+                        radius: 60,
+                        imageUrl: avatar.isNotEmpty ? avatar : null,
+                        displayName: name,
+                        showOnlineIndicator: false,
+                      ),
+                      const SizedBox(height: 16),
+                      // Large bold name
+                      Text(
+                        name,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).brightness == Brightness.dark
+                                  ? Colors.white
+                                  : Colors.black87,
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           Expanded(
             child: chatId == null
                 ? const Center(child: Text('No recipient selected'))
@@ -462,29 +541,54 @@ class _MessagesScreenState extends State<MessagesScreen> {
                         .collection('chats')
                         .doc(chatId)
                         .collection('messages')
-                        .orderBy('createdAt')
+                        .orderBy('createdAt', descending: false)
                         .snapshots(),
                     builder: (context, snap) {
-                      if (snap.connectionState != ConnectionState.active) {
+                      // Handle errors
+                      if (snap.hasError) {
+                        print('Error loading messages: ${snap.error}');
+                        // If error is due to missing index or permissions, show empty state
+                        return Center(
+                          child: Text(
+                            'Unable to load messages. Error: ${snap.error}',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        );
+                      }
+                      
+                      // Show loading only if we're truly waiting and have no data
+                      if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
                         return const Center(child: CircularProgressIndicator());
                       }
-                       final docs = snap.data?.docs ?? [];
-                       final currentMessageCount = docs.length;
-                       
-                       // Update message count when new messages arrive
-                       if (currentMessageCount != _previousMessageCount) {
-                         _previousMessageCount = currentMessageCount;
-                       }
-                       
-                       // Reset flag - with reverse: true, ListView naturally starts at bottom (no scroll needed)
-                       if (docs.isNotEmpty && _isInitialLoad) {
-                         _isInitialLoad = false;
-                       }
+                      
+                      final docs = snap.data?.docs ?? [];
+                      final currentMessageCount = docs.length;
+                      
+                      // Update message count when new messages arrive
+                      if (currentMessageCount != _previousMessageCount) {
+                        _previousMessageCount = currentMessageCount;
+                        // Reset initial load flag when we get messages
+                        if (docs.isNotEmpty && _isInitialLoad) {
+                          _isInitialLoad = false;
+                        }
+                      }
+                      
+                      // Reset flag when we have data
+                      if (docs.isNotEmpty && _isInitialLoad) {
+                        _isInitialLoad = false;
+                      }
                       
                       // Use reverse: true so ListView naturally starts at the bottom (latest messages visible)
                       // This eliminates scrolling on load - chat opens directly at the bottom without any scroll animation
                       return ListView.builder(
                         controller: _scrollController,
+                        physics: const ClampingScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        addAutomaticKeepAlives: false,
+                        addRepaintBoundaries: true,
+                        cacheExtent: 500,
                         padding: EdgeInsets.only(
                           left: 10,
                           right: 10,
@@ -515,11 +619,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
                           // Check if this message has been seen by the recipient
                           // For messages sent by current user, check if peer has viewed after message was sent
                           // For messages received, check if current user has viewed after message was sent
-                          return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                            stream: _chatId != null
-                                ? _firestore.collection('chats').doc(_chatId!).snapshots()
-                                : const Stream.empty(),
-                            builder: (context, chatSnap) {
+                          return RepaintBoundary(
+                            child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                              stream: _chatId != null
+                                  ? _firestore.collection('chats').doc(_chatId!).snapshots()
+                                  : const Stream.empty(),
+                              builder: (context, chatSnap) {
                               final chatData = chatSnap.data?.data() ?? {};
                               final messageTimestamp = m['createdAt'] as Timestamp?;
                               
@@ -609,6 +714,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                               radius: 14,
                                               imageUrl: peerAvatar.isNotEmpty ? peerAvatar : null,
                                               displayName: null,
+                                              userId: widget.peerUserId,
                                             ),
                                           ),
                                         Builder(
@@ -874,11 +980,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                 ),
                               );
                             },
-                          );
-                        },
-                      );
-                    },
-                  ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
           ),
           SafeArea(
             top: false,

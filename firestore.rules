@@ -61,6 +61,12 @@ service cloud.firestore {
         return request.auth.uid in resource.data.users;
       }
       
+      // Helper function to check if chat exists and user is in it
+      function chatExistsAndUserInChat() {
+        return exists(/databases/$(database)/documents/chats/$(chatId)) &&
+               request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users;
+      }
+      
       // Allow read if user is authenticated and is part of the chat's users array
       // Works for both individual reads and list queries with arrayContains filter
       allow read: if isAuthenticated() && userInChat();
@@ -73,8 +79,22 @@ service cloud.firestore {
       
       // Nested messages subcollection under each chat
       match /messages/{messageId} {
-        allow read: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users;
-        allow create: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users;
+        // Allow read if chat exists and user is in it
+        // If chat doesn't exist yet (being created), allow read for authenticated users
+        // This handles the case where chat document is created after messages screen opens
+        allow read: if isAuthenticated() && (
+          chatExistsAndUserInChat() ||
+          // Allow reading empty messages list when chat doesn't exist yet (will be created shortly)
+          !exists(/databases/$(database)/documents/chats/$(chatId))
+        );
+        
+        // Allow create if chat exists and user is in it, OR if chat doesn't exist yet (being created)
+        allow create: if isAuthenticated() && (
+          chatExistsAndUserInChat() ||
+          // Allow creating message when chat document is being created
+          !exists(/databases/$(database)/documents/chats/$(chatId))
+        );
+        
         allow update: if isAuthenticated() && resource.data.senderId == request.auth.uid;
         allow delete: if isAuthenticated() && (
           resource.data.senderId == request.auth.uid ||

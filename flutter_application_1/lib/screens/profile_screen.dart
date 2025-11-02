@@ -129,9 +129,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _logout(BuildContext context) async {
+    // Close the settings dialog first (using rootNavigator to ensure it closes)
+    final navigator = Navigator.of(context, rootNavigator: true);
+    navigator.pop();
+    
+    // Perform logout immediately
     await AuthService.logout();
-    if (!context.mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
+    
+    // Navigate to login screen immediately using root navigator
+    navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const LoginScreen()),
       (route) => false,
     );
@@ -225,10 +231,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            _logout(context);
-                          },
+                          onPressed: () => _logout(context),
                           icon: const Icon(Icons.logout, color: Colors.white),
                           label: const Text(
                             'Log out',

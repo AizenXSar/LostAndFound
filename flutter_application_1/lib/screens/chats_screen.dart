@@ -160,10 +160,15 @@ class _ChatsListState extends State<_ChatsList> {
         else
           Expanded(
             child: ListView.separated(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              physics: const ClampingScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              addAutomaticKeepAlives: false,
+              addRepaintBoundaries: true,
+              cacheExtent: 500,
+              padding: EdgeInsets.zero,
               itemCount: sorted.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+              separatorBuilder: (_, __) => const SizedBox(height: 0),
               itemBuilder: (context, index) {
                 final chatDoc = sorted[index];
                 final chatId = chatDoc.id;
@@ -307,62 +312,68 @@ class _ChatsListState extends State<_ChatsList> {
                               }
                             }
                             
-                            return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                              leading: ProfileAvatar(
-                                radius: 24,
-                                imageUrl: avatar.isNotEmpty ? avatar : null,
-                                displayName: null,
-                              ),
+                            return RepaintBoundary(
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                dense: true,
+                                minVerticalPadding: 0,
+                                visualDensity: VisualDensity.compact,
+                                leading: ProfileAvatar(
+                                  radius: 20,
+                                  imageUrl: avatar.isNotEmpty ? avatar : null,
+                                  displayName: null,
+                                  userId: peerId,
+                                ),
                               title: Text(
                                 name,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
+                                  fontSize: 14,
                                   fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w600,
                                   color: hasUnread 
                                       ? Theme.of(context).colorScheme.onSurface 
                                       : Theme.of(context).colorScheme.onSurface.withOpacity(0.9),
+                                  height: 1.2,
                                 ),
                               ),
-                              subtitle: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      subtitleText,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: subtitleStyle,
-                                    ),
-                                  ),
-                                  // Show "seen" indicator for messages sent by current user
-                                  if (isLastMessageFromMe && isSeen)
-                                    Padding(
-                                      padding: const EdgeInsets.only(left: 4),
+                              subtitle: Padding(
+                                padding: EdgeInsets.zero,
+                                child: Row(
+                                  children: [
+                                    Expanded(
                                       child: Text(
-                                        'seen',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey.shade600,
-                                          fontStyle: FontStyle.italic,
-                                        ),
+                                        subtitleText,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: subtitleStyle.copyWith(fontSize: 12, height: 1.2),
                                       ),
                                     ),
-                                ],
+                                    // Show "seen" indicator for messages sent by current user
+                                    if (isLastMessageFromMe && isSeen)
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 4),
+                                        child: Text(
+                                          'seen',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey.shade600,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
-                              trailing: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    timeStr, 
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: hasUnread 
-                                          ? Theme.of(context).colorScheme.primary 
-                                          : Colors.grey.shade600,
-                                      fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
-                                    ),
-                                  ),
-                                ],
+                              trailing: Text(
+                                timeStr, 
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: hasUnread 
+                                      ? Theme.of(context).colorScheme.primary 
+                                      : Colors.grey.shade600,
+                                  fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
+                                  height: 1.2,
+                                ),
                               ),
                               onTap: () {
                                 Navigator.of(context).push(
@@ -375,6 +386,7 @@ class _ChatsListState extends State<_ChatsList> {
                                   ),
                                 );
                               },
+                              ),
                             );
                           },
                         );

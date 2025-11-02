@@ -69,6 +69,7 @@ class PostCard extends StatelessWidget {
                           radius: 18,
                           imageUrl: avatar.isNotEmpty ? avatar : null,
                           displayName: displayName.isNotEmpty ? displayName : null,
+                          userId: postedByUserId.isNotEmpty ? postedByUserId : null,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -197,6 +198,7 @@ class PostCard extends StatelessWidget {
         ProfileAvatar(
           radius: 18,
           displayName: null,
+          userId: postedByUserId.isNotEmpty ? postedByUserId : null,
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -249,6 +251,7 @@ class PostCard extends StatelessWidget {
           radius: 18,
           imageUrl: avatar.isNotEmpty ? avatar : null,
           displayName: displayName.isNotEmpty ? displayName : null,
+          userId: postedByUserId.isNotEmpty ? postedByUserId : null,
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -555,6 +558,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                 radius: 18,
                                 imageUrl: authorAvatar.isNotEmpty ? authorAvatar : null,
                                 displayName: null,
+                                userId: authorId.isNotEmpty ? authorId : null,
                               ),
                               const SizedBox(width: 12),
                               Expanded(

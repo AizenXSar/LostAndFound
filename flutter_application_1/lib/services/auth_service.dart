@@ -127,6 +127,28 @@ class AuthService {
         // Continue with null userData - logging will handle it
       }
       
+      // Set user as online in Firestore (use set with merge to initialize if field doesn't exist)
+      try {
+        if (userData != null && userData.containsKey('isAdmin') && userData['isAdmin'] == true) {
+          // Update in admins collection if user is admin
+          await _firestore.collection('admins').doc(user.uid).set({
+            'isOnline': true,
+            'lastSeen': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        } else {
+          // Update in users collection
+          await _firestore.collection('users').doc(user.uid).set({
+            'isOnline': true,
+            'lastSeen': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
+      } catch (e) {
+        print('Error updating online status on login: $e');
+        // Continue with login even if update fails
+      }
+      
       // Create login log - ensure this happens for all successful logins
       // Use await to ensure log is created before returning success
       try {
@@ -196,6 +218,8 @@ class AuthService {
           'profileImageUrl': profileImageUrl ?? '',
           'role': 'user',
           'isAdmin': false,
+          'isOnline': true, // User is online when they register
+          'lastSeen': FieldValue.serverTimestamp(),
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: false));
@@ -336,6 +360,37 @@ class AuthService {
 
   // Logout
   static Future<void> logout() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      try {
+        // Set user as offline in Firestore before signing out
+        final userId = user.uid;
+        
+        // Try to update in users collection (use set with merge to ensure field exists)
+        try {
+          await _firestore.collection('users').doc(userId).set({
+            'isOnline': false,
+            'lastSeen': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        } catch (_) {
+          // If user is not in users collection, try admins collection
+          try {
+            await _firestore.collection('admins').doc(userId).set({
+              'isOnline': false,
+              'lastSeen': FieldValue.serverTimestamp(),
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+          } catch (_) {
+            // Ignore if update fails
+          }
+        }
+      } catch (e) {
+        print('Error updating online status on logout: $e');
+        // Continue with logout even if update fails
+      }
+    }
+    
     await _auth.signOut();
     await clearUserData();
   }
