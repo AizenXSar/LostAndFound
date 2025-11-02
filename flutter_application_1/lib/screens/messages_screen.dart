@@ -902,8 +902,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
                           valueListenable: _textController,
                           builder: (context, value, child) {
                             const blueColor = Colors.blue; // Blue color for all icons
-                            const iconSize = 24.0; // Same small size for all icons (+, camera, gallery, mic, arrow)
-                            const iconInnerSize = 16.0; // Same small size for all icon contents
+                            const iconSize = 32.0; // Container size for icons (+, camera, gallery, mic, arrow)
+                            const iconInnerSize = 22.0; // Match like icon size (22) for all icon contents
                             final hasText = value.text.isNotEmpty; // Check for any text, even spaces
                             // Transform when field is focused OR has text
                             final shouldTransform = isFocused || hasText;
@@ -1106,7 +1106,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                     child: const Icon(
                                       Icons.mood_outlined,
                                       color: Colors.blue,
-                                      size: 20,
+                                      size: 22,
                                     ),
                                   ),
                                 ),
