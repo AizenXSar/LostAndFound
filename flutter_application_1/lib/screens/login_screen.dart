@@ -25,13 +25,42 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _hasAgreedToPrivacy = false;
+  bool _rememberMe = false;
 
   static const String _privacyAgreedKey = 'privacy_policy_agreed';
+  static const String _rememberMeKey = 'remember_me';
+  static const String _rememberedEmailKey = 'remembered_email';
+  static const String _rememberedPasswordKey = 'remembered_password';
 
   @override
   void initState() {
     super.initState();
     _checkPrivacyAgreement();
+    _loadRememberedCredentials();
+  }
+
+  Future<void> _loadRememberedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rememberMe = prefs.getBool(_rememberMeKey) ?? false;
+    if (rememberMe && mounted) {
+      setState(() {
+        _rememberMe = true;
+        _emailController.text = prefs.getString(_rememberedEmailKey) ?? '';
+        _passwordController.text = prefs.getString(_rememberedPasswordKey) ?? '';
+      });
+    }
+  }
+
+  Future<void> _saveRememberMeCredentials(bool remember, String email, String password) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_rememberMeKey, remember);
+    if (remember) {
+      await prefs.setString(_rememberedEmailKey, email);
+      await prefs.setString(_rememberedPasswordKey, password);
+    } else {
+      await prefs.remove(_rememberedEmailKey);
+      await prefs.remove(_rememberedPasswordKey);
+    }
   }
 
   Future<void> _checkPrivacyAgreement() async {
@@ -85,10 +114,16 @@ class _LoginScreenState extends State<LoginScreen> {
       _isLoading = true;
     });
 
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
     final result = await AuthService.login(
-      _emailController.text.trim(),
-      _passwordController.text,
+      email,
+      password,
     );
+
+    // Save or clear credentials based on remember me checkbox
+    await _saveRememberMeCredentials(_rememberMe, email, password);
 
     setState(() {
       _isLoading = false;
@@ -153,6 +188,42 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _loginWithGoogle() async {
+    if (!_hasAgreedToPrivacy) {
+      if (!mounted) return;
+      _showPrivacyPolicyDialog();
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    final result = await AuthService.signInWithGoogle();
+
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (result['success'] == true) {
+      final isAdmin = await AuthService.currentUserIsAdmin();
+      final Widget dest = isAdmin ? const AdminHomePage() : const MainNav();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => dest),
+        (route) => false,
+      );
+    } else {
+      final msg = (result['message'] as String?) ?? 'Google sign-in failed';
+      await SweetAlert.error(
+        context: context,
+        title: 'Login failed',
+        message: msg,
+      );
+    }
+  }
+
   void _showPrivacyPolicyDialog() {
     showDialog(
       context: context,
@@ -191,17 +262,17 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 20),
-                // Welcome text at top
+                // Header text
                 const Text(
-                  'Welcome Back',
-                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                  'Login to your account.',
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
-                  'Sign in to continue',
+                  'Hello, welcome back to your account',
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 14,
                     color: Theme.of(
                       context,
                     ).colorScheme.onSurface.withOpacity(0.6),
@@ -211,19 +282,21 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 24),
                 // Animation Logo
                 SizedBox(
-                  height: 200,
+                  height: 160,
                   width: 200,
                   child: Lottie.asset(
                     'assets/animations/Live chatbot.json',
                     fit: BoxFit.contain,
                   ),
                 ),
-                const SizedBox(height: 48),
+                const SizedBox(height: 16),
                 // Email Field
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                   decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                     labelText: 'Email',
                     prefixIcon: const Icon(Icons.email_outlined),
                     border: OutlineInputBorder(
@@ -263,12 +336,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
                 // Password Field
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outlined),
                     suffixIcon: IconButton(
@@ -318,26 +393,43 @@ class _LoginScreenState extends State<LoginScreen> {
                   },
                 ),
                 const SizedBox(height: 8),
-                // Forgot Password
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const ForgotPasswordScreen(),
-                        ),
-                      );
-                    },
-                    child: const Text('Forgot Password?'),
-                  ),
+                // Remember me + Forgot Password row
+                Row(
+                  children: [
+                    SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: Checkbox(
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        value: _rememberMe,
+                        onChanged: (v) {
+                          setState(() {
+                            _rememberMe = v ?? false;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text('Remember me'),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const ForgotPasswordScreen(),
+                          ),
+                        );
+                      },
+                      child: const Text('Forgot Password?'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
                 // Login Button
                 ElevatedButton(
                   onPressed: _isLoading ? null : _login,
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -363,6 +455,43 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                 ),
+                const SizedBox(height: 16),
+                // OR divider
+                Row(
+                  children: [
+                    Expanded(child: Divider(color: Theme.of(context).dividerColor.withOpacity(0.5))),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        'OR',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Expanded(child: Divider(color: Theme.of(context).dividerColor.withOpacity(0.5))),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Google Sign-In button
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _isLoading ? null : _loginWithGoogle,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    icon: Icon(Icons.g_mobiledata, size: 24, color: Theme.of(context).colorScheme.onSurface),
+                    label: const Text(
+                      'Continue with Google',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 24),
                 // Register Link
                 Row(
@@ -381,6 +510,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
               ],
             ),
           ),

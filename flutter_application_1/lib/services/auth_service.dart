@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthService {
   static const String cloudName = 'dqvgdumua';
@@ -311,6 +312,101 @@ class AuthService {
     }
   }
 
+  // Google Sign-In with Firebase Authentication
+  static Future<Map<String, dynamic>> signInWithGoogle() async {
+    try {
+      // Configure GoogleSignIn with Android OAuth client ID from google-services.json
+      // Using the Android client (client_type: 1) which is properly linked to the app
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        scopes: ['email', 'profile'],
+        serverClientId: '782422210889-fim2eong2ba389huhuaoh098tnct6b1h.apps.googleusercontent.com',
+      );
+      
+      // Sign out any existing Google account to force account selection
+      await googleSignIn.signOut();
+      
+      // Now sign in - this will show the account picker
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      if (googleUser == null) {
+        return {'success': false, 'message': 'Google sign-in was cancelled'};
+      }
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      final OAuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      final UserCredential userCredential =
+          await _auth.signInWithCredential(credential);
+      final user = userCredential.user;
+      if (user == null) {
+        return {'success': false, 'message': 'Login failed'};
+      }
+
+      // Ensure a user profile exists in Firestore (bootstrap on first login)
+      Map<String, dynamic>? userData;
+      try {
+        final userDoc = await _firestore.collection('users').doc(user.uid).get();
+        if (userDoc.exists) {
+          userData = userDoc.data();
+        } else {
+          userData = {
+            'name': (user.displayName ?? '').trim(),
+            'email': (user.email ?? '').trim(),
+            'profileImageUrl': user.photoURL ?? '',
+            'role': 'user',
+            'isAdmin': false,
+            'isOnline': true,
+            'lastSeen': FieldValue.serverTimestamp(),
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          };
+          await _firestore
+              .collection('users')
+              .doc(user.uid)
+              .set(userData, SetOptions(merge: true));
+        }
+      } catch (e) {
+        // Continue even if profile bootstrap fails
+        print('Error ensuring Firestore user profile for Google sign-in: $e');
+      }
+
+      // Update online status
+      try {
+        await _firestore.collection('users').doc(user.uid).set({
+          'isOnline': true,
+          'lastSeen': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (_) {}
+
+      // Create login log
+      try {
+        await _createLoginLog(user.uid, user.email ?? '', userData);
+      } catch (e) {
+        print('Failed to create login log (Google): $e');
+      }
+
+      return {
+        'success': true,
+        'message': 'Login successful',
+        'user': {
+          'id': user.uid,
+          'email': user.email,
+          'name': user.displayName ?? (userData?['name'] ?? ''),
+          'profileImageUrl': user.photoURL ?? (userData?['profileImageUrl'] ?? ''),
+        },
+      };
+    } on FirebaseAuthException catch (e) {
+      final message = e.message ?? 'Google sign-in failed';
+      return {'success': false, 'message': message};
+    } catch (e) {
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
   // Forgot Password - Send reset email
   static Future<Map<String, dynamic>> forgotPassword(String email) async {
     try {
@@ -389,6 +485,17 @@ class AuthService {
         print('Error updating online status on logout: $e');
         // Continue with logout even if update fails
       }
+    }
+    
+    // Sign out from Google Sign-In to clear account selection
+    try {
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        serverClientId: '782422210889-fim2eong2ba389huhuaoh098tnct6b1h.apps.googleusercontent.com',
+      );
+      await googleSignIn.signOut();
+    } catch (e) {
+      // Continue with logout even if Google Sign-In sign out fails
+      print('Error signing out from Google Sign-In: $e');
     }
     
     await _auth.signOut();

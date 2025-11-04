@@ -103,7 +103,10 @@ class _CreateTransactionPageState extends State<CreateTransactionPage> {
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 40,
-        title: Text(_showClaimForm ? 'New Transaction - Claim Item' : 'Select Item to Claim'),
+        title: Text(
+          _showClaimForm ? 'New Transaction - Claim Item' : 'Select Item to Claim',
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
         elevation: 0,
         leading: _showClaimForm
             ? IconButton(

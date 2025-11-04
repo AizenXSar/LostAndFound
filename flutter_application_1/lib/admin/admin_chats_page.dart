@@ -34,7 +34,7 @@ class _AdminChatsPageState extends State<AdminChatsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Messages'),
+        title: const Text('Messages', style: TextStyle(fontWeight: FontWeight.w700)),
         elevation: 0,
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(

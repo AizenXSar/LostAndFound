@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'chats_screen.dart';
+import '../widgets/notifications_icon_button.dart';
 import '../widgets/post_card.dart';
 import '../widgets/unread_messages_badge.dart';
 
@@ -15,6 +16,7 @@ class LostItemsScreen extends StatefulWidget {
 class _LostItemsScreenState extends State<LostItemsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  bool _isSearching = false;
 
   Stream<QuerySnapshot<Map<String, dynamic>>> get _stream => FirebaseFirestore
       .instance
@@ -28,18 +30,22 @@ class _LostItemsScreenState extends State<LostItemsScreen> {
     super.dispose();
   }
 
+  // removed last viewed tracking (handled in nav badge)
+
+  // removed unused _counterBadge
+
   @override
   Widget build(BuildContext context) {
     final stream = _stream;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final iconColor = isDark ? Colors.white : Colors.black;
     final bg = isDark
         ? Colors.white.withOpacity(0.08)
         : Colors.black.withOpacity(0.06);
     final hint = isDark
         ? Colors.white.withOpacity(0.6)
         : Colors.black.withOpacity(0.45);
-    final iconColor = isDark ? Colors.white : Colors.black;
 
     return Scaffold(
       appBar: AppBar(
@@ -47,35 +53,73 @@ class _LostItemsScreenState extends State<LostItemsScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
-        title: ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: Container(
-            height: 44,
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (v) => setState(() => _query = v),
-              style: Theme.of(context).textTheme.bodyMedium,
-              decoration: InputDecoration(
-                prefixIcon: Icon(Icons.search, color: iconColor),
-                hintText: 'Search lost items…',
-                hintStyle: TextStyle(color: hint),
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 12,
+        leading: _isSearching
+            ? null
+            : Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Image.asset(
+                    Theme.of(context).brightness == Brightness.dark
+                        ? 'assets/logo/logo2.png'
+                        : 'assets/logo/logo1-Photoroom.png',
+                    height: 40,
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
-            ),
-          ),
-        ),
-        centerTitle: true,
+        leadingWidth: _isSearching ? 56 : 140,
+        title: _isSearching
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: bg,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    onChanged: (v) => setState(() => _query = v),
+                    style: TextStyle(
+                      color: iconColor,
+                      fontSize: Theme.of(context).textTheme.bodyMedium?.fontSize ?? 14,
+                    ),
+                    decoration: InputDecoration(
+                      prefixIcon: Icon(Icons.search, color: iconColor),
+                      hintText: 'Search lost items…',
+                      hintStyle: TextStyle(color: hint),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            : null,
+        centerTitle: false,
         actions: [
+          _isSearching
+              ? IconButton(
+                  tooltip: 'Close search',
+                  onPressed: () {
+                    setState(() => _isSearching = false);
+                  },
+                  icon: Icon(Icons.close, color: iconColor),
+                )
+              : IconButton(
+                  tooltip: 'Search',
+                  onPressed: () {
+                    setState(() => _isSearching = true);
+                  },
+                  icon: Icon(Icons.search, color: iconColor),
+                ),
+          const NotificationsIconButton(),
           UnreadMessagesBadge(
             iconPath: 'assets/icons/messenger.svg',
             onPressed: () {
@@ -101,9 +145,21 @@ class _LostItemsScreenState extends State<LostItemsScreen> {
             return status != 'claimed';
           }).toList();
           
+          // compute new items based on createdAt > lastViewedTs
+          // no-op: lastViewed handled for nav badge; page no longer computes a count
+
           final filtered = unclaimedDocs.where((d) {
-            final title = (d.data()['title'] as String?) ?? '';
-            return title.toLowerCase().contains(_query.toLowerCase());
+            if (_query.isEmpty) return true;
+            final data = d.data();
+            final queryLower = _query.toLowerCase();
+            final title = (data['title'] as String?) ?? '';
+            final authorName = (data['authorName'] as String?) ?? '';
+            final description = (data['description'] as String?) ?? '';
+            final location = (data['location'] as String?) ?? '';
+            return title.toLowerCase().contains(queryLower) ||
+                   authorName.toLowerCase().contains(queryLower) ||
+                   description.toLowerCase().contains(queryLower) ||
+                   location.toLowerCase().contains(queryLower);
           }).toList();
           // Sort by createdAt desc if present
           filtered.sort((a, b) {
@@ -119,10 +175,9 @@ class _LostItemsScreenState extends State<LostItemsScreen> {
               final title = (data['title'] as String?) ?? '';
               final imageUrl = (data['imageUrl'] as String?) ?? '';
               final description = (data['description'] as String?) ?? '';
-              final location = (data['location'] as String?) ?? '';
               final status = (data['status'] as String?) ?? '';
-              final rawDate = data['date'];
-              final String dateStr = _formatDate(rawDate);
+              final rawDate = data['createdAt'] ?? data['date'];
+              final String dateStr = _formatRelativeDate(rawDate);
               return PostCard(
                 id: filtered[index].id,
                 imageUrl: imageUrl,
@@ -144,123 +199,36 @@ class _LostItemsScreenState extends State<LostItemsScreen> {
   }
 }
 
-String _formatDate(dynamic raw) {
+String _formatRelativeDate(dynamic raw) {
   if (raw == null) return '';
   DateTime? dt;
   try {
     if (raw is DateTime) dt = raw;
-    final seconds = (raw as dynamic).seconds as int?;
-    if (dt == null && seconds != null) {
-      dt = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
-    }
+    if (dt == null && raw is Timestamp) dt = raw.toDate();
     if (dt == null && raw is String) dt = DateTime.tryParse(raw);
   } catch (_) {}
   if (dt == null) return '';
-  dt = dt.toLocal();
-  String two(int v) => v.toString().padLeft(2, '0');
-  final hasTime = !(dt.hour == 0 && dt.minute == 0 && dt.second == 0);
-  if (!hasTime) {
-    return '${dt.year}-${two(dt.month)}-${two(dt.day)}';
+  final d = dt.toLocal();
+  final now = DateTime.now();
+  final diff = now.difference(d);
+  String _hmm(DateTime x) {
+    final h12 = x.hour % 12 == 0 ? 12 : x.hour % 12;
+    final mm = x.minute.toString().padLeft(2, '0');
+    final ampm = x.hour >= 12 ? 'PM' : 'AM';
+    return '$h12:$mm $ampm';
   }
-  final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-  final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-  return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(hour12)}:${two(dt.minute)}$ampm';
+  if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  if (diff.inDays == 1) return 'Yesterday at ${_hmm(d)}';
+  if (diff.inDays < 7) return '${diff.inDays} days ago at ${_hmm(d)}';
+  final weeks = (diff.inDays / 7).floor();
+  if (weeks < 5) return '${weeks}w ago';
+  final months = (diff.inDays / 30).floor();
+  if (months < 12) return '${months}mo ago';
+  final years = (diff.inDays / 365).floor();
+  return '${years}y ago';
 }
 
-void _openItemDialog(
-  BuildContext context, {
-  required String title,
-  required String imageUrl,
-  String? description,
-  String? location,
-  String? status,
-  String? date,
-}) {
-  showGeneralDialog(
-    context: context,
-    barrierDismissible: true,
-    barrierLabel: 'Item',
-    barrierColor: Colors.black54,
-    pageBuilder: (context, _, __) => const SizedBox.shrink(),
-    transitionBuilder: (context, anim, _, __) {
-      return BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: 6 * anim.value,
-          sigmaY: 6 * anim.value,
-        ),
-        child: Opacity(
-          opacity: anim.value,
-          child: Center(
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                width: MediaQuery.of(context).size.width * 0.9,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: Image.network(imageUrl, fit: BoxFit.contain),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                      child: Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if ((description ?? '').isNotEmpty)
-                            Text(description!),
-                          if ((location ?? '').isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text('Location: $location'),
-                            ),
-                          if ((status ?? '').isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text('Status: $status'),
-                            ),
-                          if ((date ?? '').isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text('Date: $date'),
-                            ),
-                        ],
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(0, 0, 8, 8),
-                        child: TextButton.icon(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                          label: const Text('Close'),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    },
-  );
-}
+// removed unused _openItemDialog
+

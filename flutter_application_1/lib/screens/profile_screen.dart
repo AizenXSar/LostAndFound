@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
+import 'main_nav.dart';
 import '../theme/theme_controller.dart';
 import '../utils/sweet_alert.dart';
 
@@ -278,7 +279,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Profile'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          color: Theme.of(context).colorScheme.primary,
+          onPressed: () {
+            final nav = Navigator.of(context);
+            if (nav.canPop()) {
+              nav.pop();
+            } else {
+              nav.pushReplacement(
+                MaterialPageRoute(builder: (_) => const MainNav()),
+              );
+            }
+          },
+          tooltip: 'Back',
+        ),
+        title: const Text('Profile', style: TextStyle(fontWeight: FontWeight.w700)),
         actions: [
           if (_isSaving)
             const Padding(
@@ -667,7 +683,7 @@ class _CompactPostCard extends StatelessWidget {
           context,
           MaterialPageRoute(
             builder: (_) => Scaffold(
-              appBar: AppBar(title: Text(title.isEmpty ? 'Post' : title)),
+              appBar: AppBar(title: Text(title.isEmpty ? 'Post' : title, style: const TextStyle(fontWeight: FontWeight.w700))),
               body: Center(
                 child: imageUrl.isNotEmpty
                     ? Image.network(imageUrl, fit: BoxFit.contain)

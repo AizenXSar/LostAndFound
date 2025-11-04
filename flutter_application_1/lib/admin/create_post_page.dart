@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
@@ -268,7 +269,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create New Post'),
+        title: const Text('Create New Post', style: TextStyle(fontWeight: FontWeight.w700)),
       ),
       body: Form(
         key: _formKey,
@@ -375,6 +376,12 @@ class _CreatePostPageState extends State<CreatePostPage> {
                                   initialDate: _date ?? now,
                                   firstDate: DateTime(now.year - 2),
                                   lastDate: DateTime(now.year + 2),
+                                  builder: (ctx, child) {
+                                    return BackdropFilter(
+                                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                                      child: child ?? const SizedBox.shrink(),
+                                    );
+                                  },
                                 );
                                 if (picked != null) {
                                   setState(() => _date = picked);
@@ -522,6 +529,12 @@ class _CreatePostPageState extends State<CreatePostPage> {
                                 final picked = await showTimePicker(
                                   context: context,
                                   initialTime: _time ?? TimeOfDay.now(),
+                                  builder: (ctx, child) {
+                                    return BackdropFilter(
+                                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                                      child: child ?? const SizedBox.shrink(),
+                                    );
+                                  },
                                 );
                                 if (picked != null) {
                                   setState(() => _time = picked);

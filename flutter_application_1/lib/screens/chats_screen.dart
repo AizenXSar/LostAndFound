@@ -37,7 +37,12 @@ class _ChatsScreenState extends State<ChatsScreen> {
     });
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Messages')),
+      appBar: AppBar(
+        title: const Text(
+          'Messages',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: chatsQuery,
         builder: (context, snap) {
@@ -87,6 +92,19 @@ class _ChatsList extends StatefulWidget {
 }
 
 class _ChatsListState extends State<_ChatsList> {
+  String _formatChatListTime(DateTime date) {
+    final now = DateTime.now();
+    final isSameDay = now.year == date.year && now.month == date.month && now.day == date.day;
+    final hour12 = date.hour == 0 ? 12 : (date.hour > 12 ? date.hour - 12 : date.hour);
+    final minute = date.minute.toString().padLeft(2, '0');
+    final ampm = date.hour >= 12 ? 'PM' : 'AM';
+    if (isSameDay) {
+      return '$hour12:$minute $ampm';
+    }
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final weekday = weekdays[(date.weekday - 1) % 7];
+    return '$weekday $hour12:$minute $ampm';
+  }
   @override
   void initState() {
     super.initState();
@@ -177,9 +195,9 @@ class _ChatsListState extends State<_ChatsList> {
                 final peerId = users.firstWhere((u) => u != widget.uid, orElse: () => '');
                 final last = (data['lastMessage'] as String?)?.trim() ?? '';
                 final ts = (data['updatedAt'] as Timestamp?);
-                final timeStr = ts == null
+                var timeStr = ts == null
                     ? ''
-                    : TimeOfDay.fromDateTime(ts.toDate().toLocal()).format(context);
+                    : _formatChatListTime(ts.toDate().toLocal());
                 final lastViewedAt = (data['lastViewedAt_${widget.uid}'] as Timestamp?);
 
                 // Get stored peer info from chat document, with fallback to users collection
@@ -202,6 +220,9 @@ class _ChatsListState extends State<_ChatsList> {
                       final lastMsg = lastMsgSnap.data!.docs.first.data();
                       lastMessageSender = (lastMsg['senderId'] as String?) ?? '';
                       lastMessageTime = lastMsg['createdAt'] as Timestamp?;
+                    }
+                    if (lastMessageTime != null) {
+                      timeStr = _formatChatListTime(lastMessageTime.toDate().toLocal());
                     }
                     
                     final isLastMessageFromMe = lastMessageSender == widget.uid;
@@ -314,7 +335,7 @@ class _ChatsListState extends State<_ChatsList> {
                             
                             return RepaintBoundary(
                               child: ListTile(
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                                 dense: true,
                                 minVerticalPadding: 0,
                                 visualDensity: VisualDensity.compact,
@@ -328,7 +349,7 @@ class _ChatsListState extends State<_ChatsList> {
                                 name,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 16,
                                   fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w600,
                                   color: hasUnread 
                                       ? Theme.of(context).colorScheme.onSurface 

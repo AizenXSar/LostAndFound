@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
+import '../utils/sweet_alert.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -36,26 +37,25 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
     setState(() {
       _isLoading = false;
-      if (result['success'] == true) {
-        _emailSent = true;
-      }
     });
 
     if (!mounted) return;
 
     if (result['success'] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result['message'] ?? 'Password reset email sent'),
-          backgroundColor: Colors.green,
-        ),
+      await SweetAlert.fire(
+        context: context,
+        title: 'Success',
+        message: result['message'] ?? 'Password reset email sent',
+        icon: SweetAlertType.success,
       );
+      setState(() {
+        _emailSent = true;
+      });
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result['message'] ?? 'Failed to send reset email'),
-          backgroundColor: Colors.red,
-        ),
+      await SweetAlert.error(
+        context: context,
+        title: 'Failed',
+        message: result['message'] ?? 'Failed to send reset email',
       );
     }
   }

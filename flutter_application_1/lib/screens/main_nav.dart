@@ -58,32 +58,119 @@ class _MainNavState extends State<MainNav> {
                   onTap: () => setState(() => _currentIndex = 0),
                 ),
                 // Lost (Shop equivalent)
-                _NavItem(
-                  icon: Icons.search,
-                  filledIcon: Icons.search,
-                  label: 'Lost',
-                  isSelected: _currentIndex == 1,
-                  onTap: () => setState(() => _currentIndex = 1),
-                  showBadge: false,
+                // Lost with new items badge
+                StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseAuth.instance.currentUser == null
+                      ? const Stream.empty()
+                      : FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(FirebaseAuth.instance.currentUser!.uid)
+                          .snapshots(),
+                  builder: (context, userSnap) {
+                    final userData = userSnap.data?.data();
+                    final lastViewed = (userData?['lastViewedLostItems'] as Timestamp?);
+                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: FirebaseFirestore.instance
+                          .collection('items')
+                          .where('type', isEqualTo: 'lost')
+                          .snapshots(),
+                      builder: (context, itemsSnap) {
+                        int newCount = 0;
+                        if (itemsSnap.hasData) {
+                          final docs = itemsSnap.data!.docs;
+                          final lv = lastViewed?.toDate();
+                          if (lv == null) {
+                            // First time: do not show a total badge
+                            newCount = 0;
+                          } else {
+                            for (final d in docs) {
+                              final data = d.data();
+                              if ((data['status'] as String?) == 'claimed') continue;
+                              final ts = data['createdAt'];
+                              DateTime? dt;
+                              if (ts is Timestamp) dt = ts.toDate();
+                              if (dt != null && dt.isAfter(lv)) newCount++;
+                            }
+                          }
+                        }
+                        return _NavItem(
+                          icon: Icons.search,
+                          filledIcon: Icons.search,
+                          label: 'Lost',
+                          isSelected: _currentIndex == 1,
+                          onTap: () async {
+                            final uid = FirebaseAuth.instance.currentUser?.uid;
+                            if (uid != null) {
+                              try {
+                                await FirebaseFirestore.instance
+                                    .collection('users')
+                                    .doc(uid)
+                                    .set({'lastViewedLostItems': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+                              } catch (_) {}
+                            }
+                            setState(() => _currentIndex = 1);
+                          },
+                          badgeCount: newCount > 0 ? (newCount > 99 ? '99+' : newCount.toString()) : null,
+                        );
+                      },
+                    );
+                  },
                 ),
-                // Found (Inbox equivalent)
-                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: FirebaseFirestore.instance
-                      .collection('chats')
-                      .where('participants', arrayContains: FirebaseAuth.instance.currentUser?.uid ?? '')
-                      .snapshots(),
-                  builder: (context, snap) {
-                    int unreadCount = 0;
-                    if (snap.hasData) {
-                      unreadCount = snap.data!.docs.length; // Simple count, can be improved
-                    }
-                    return _NavItem(
-                      icon: Icons.inbox_outlined,
-                      filledIcon: Icons.inbox,
-                      label: 'Found',
-                      isSelected: _currentIndex == 2,
-                      onTap: () => setState(() => _currentIndex = 2),
-                      badgeCount: unreadCount > 0 ? (unreadCount > 99 ? '99+' : unreadCount.toString()) : null,
+                // Found with new items badge
+                StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseAuth.instance.currentUser == null
+                      ? const Stream.empty()
+                      : FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(FirebaseAuth.instance.currentUser!.uid)
+                          .snapshots(),
+                  builder: (context, userSnap) {
+                    final userData = userSnap.data?.data();
+                    final lastViewed = (userData?['lastViewedFoundItems'] as Timestamp?);
+                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: FirebaseFirestore.instance
+                          .collection('items')
+                          .where('type', isEqualTo: 'found')
+                          .snapshots(),
+                      builder: (context, itemsSnap) {
+                        int newCount = 0;
+                        if (itemsSnap.hasData) {
+                          final docs = itemsSnap.data!.docs;
+                          final lv = lastViewed?.toDate();
+                          if (lv == null) {
+                            // First time: do not show a total badge
+                            newCount = 0;
+                          } else {
+                            for (final d in docs) {
+                              final data = d.data();
+                              if ((data['status'] as String?) == 'claimed') continue;
+                              final ts = data['createdAt'];
+                              DateTime? dt;
+                              if (ts is Timestamp) dt = ts.toDate();
+                              if (dt != null && dt.isAfter(lv)) newCount++;
+                            }
+                          }
+                        }
+                        return _NavItem(
+                          icon: Icons.inbox_outlined,
+                          filledIcon: Icons.inbox,
+                          label: 'Found',
+                          isSelected: _currentIndex == 2,
+                          onTap: () async {
+                            final uid = FirebaseAuth.instance.currentUser?.uid;
+                            if (uid != null) {
+                              try {
+                                await FirebaseFirestore.instance
+                                    .collection('users')
+                                    .doc(uid)
+                                    .set({'lastViewedFoundItems': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+                              } catch (_) {}
+                            }
+                            setState(() => _currentIndex = 2);
+                          },
+                          badgeCount: newCount > 0 ? (newCount > 99 ? '99+' : newCount.toString()) : null,
+                        );
+                      },
                     );
                   },
                 ),
@@ -199,15 +286,17 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
                         right: -8,
                         top: -4,
                         child: Container(
-                          padding: widget.badgeCount!.length > 2
-                              ? const EdgeInsets.symmetric(horizontal: 4, vertical: 2)
-                              : const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
+                          width: 20,
+                          height: 20,
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
                             color: Colors.red,
-                            borderRadius: BorderRadius.circular(widget.badgeCount!.length > 2 ? 8 : 10),
+                            shape: BoxShape.circle,
                           ),
                           child: Text(
                             widget.badgeCount!,
+                            maxLines: 1,
+                            overflow: TextOverflow.visible,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,

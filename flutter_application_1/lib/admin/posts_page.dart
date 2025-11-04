@@ -368,7 +368,7 @@ class _PostDetailsPage extends StatelessWidget {
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Post Details'),
+        title: const Text('Post Details', style: TextStyle(fontWeight: FontWeight.w700)),
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: firestore.collection('items').doc(postId).snapshots(),

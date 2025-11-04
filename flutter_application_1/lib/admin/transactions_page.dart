@@ -853,7 +853,7 @@ class _TransactionDetailsPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Transaction Details'),
+        title: const Text('Transaction Details', style: TextStyle(fontWeight: FontWeight.w700)),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),

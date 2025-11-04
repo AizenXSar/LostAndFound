@@ -103,7 +103,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   static const List<String> _weekdayNames = [
-    'mon.', 'tue.', 'wed.', 'thu.', 'fri.', 'sat.', 'sun.'
+    'Mon.', 'Tue.', 'Wed.', 'Thu.', 'Fri.', 'Sat.', 'Sun.'
   ];
 
   String _formatDayTime(DateTime d) {
@@ -397,55 +397,111 @@ class _MessagesScreenState extends State<MessagesScreen> {
   Widget build(BuildContext context) {
     final chatId = _chatId;
     return Scaffold(
+      backgroundColor: Theme.of(context).brightness == Brightness.dark ? Colors.black : Colors.white,
       appBar: AppBar(
+        backgroundColor: Theme.of(context).brightness == Brightness.dark ? Colors.black : Colors.white,
+        foregroundColor: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           color: Colors.blue,
           onPressed: () => Navigator.pop(context),
         ),
         titleSpacing: 0,
-        title: widget.peerUserId != null && widget.peerUserId!.isNotEmpty
-            ? StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                stream: FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(widget.peerUserId)
-                    .snapshots(),
-                builder: (context, userSnap) {
-                  final u = userSnap.data?.data();
-                  final name = (u?['name'] as String?)?.trim() ?? 
-                               widget.initialName ?? 
-                               'User';
-                  final avatar = (u?['profileImageUrl'] as String?)?.trim() ?? 
-                                 widget.initialAvatarUrl ?? 
-                                 '';
-                  
-                  return Row(
-                    children: [
-                      const SizedBox(width: 8),
-                      ProfileAvatar(
-                        radius: 18,
-                        imageUrl: avatar.isNotEmpty ? avatar : null,
-                        displayName: name,
-                        userId: widget.peerUserId,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          name,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context).brightness == Brightness.dark
-                                ? Colors.white
-                                : Colors.black87,
+            title: widget.peerUserId != null && widget.peerUserId!.isNotEmpty
+                ? StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(widget.peerUserId)
+                        .snapshots(),
+                    builder: (context, userSnap) {
+                      final u = userSnap.data?.data();
+                      final name = (u?['name'] as String?)?.trim() ?? 
+                                   widget.initialName ?? 
+                                   'User';
+                      final avatar = (u?['profileImageUrl'] as String?)?.trim() ?? 
+                                     widget.initialAvatarUrl ?? 
+                                     '';
+                      // Determine last active time from common fields if available
+                      final ts = (u?['lastActiveAt'] as Timestamp?)
+                          ?? (u?['lastSeenAt'] as Timestamp?)
+                          ?? (u?['updatedAt'] as Timestamp?);
+                      String activeText = '';
+                      if (ts != null) {
+                        final d = ts.toDate().toLocal();
+                        final now = DateTime.now();
+                        final diff = now.difference(d);
+                        String rel;
+                        if (diff.inSeconds < 5) {
+                          rel = 'now';
+                        } else if (diff.inSeconds < 60) {
+                          rel = '${diff.inSeconds}s ago';
+                        } else if (diff.inMinutes < 60) {
+                          rel = '${diff.inMinutes}m ago';
+                        } else if (diff.inHours < 24) {
+                          rel = '${diff.inHours}h ago';
+                        } else if (diff.inDays == 1) {
+                          final h12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+                          final mm = d.minute.toString().padLeft(2, '0');
+                          final ampm = d.hour >= 12 ? 'PM' : 'AM';
+                          rel = 'Yesterday at $h12:$mm $ampm';
+                        } else if (diff.inDays < 7) {
+                          final h12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+                          final mm = d.minute.toString().padLeft(2, '0');
+                          final ampm = d.hour >= 12 ? 'PM' : 'AM';
+                          rel = '${diff.inDays} days ago at $h12:$mm $ampm';
+                        } else {
+                          final h12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+                          final mm = d.minute.toString().padLeft(2, '0');
+                          final ampm = d.hour >= 12 ? 'PM' : 'AM';
+                          rel = '${d.year}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')} $h12:$mm $ampm';
+                        }
+                        activeText = 'Active $rel';
+                      }
+                      
+                      return Row(
+                        children: [
+                          const SizedBox(width: 8),
+                          ProfileAvatar(
+                            radius: 18,
+                            imageUrl: avatar.isNotEmpty ? avatar : null,
+                            displayName: name,
+                            userId: widget.peerUserId,
+                            showOnlineIndicator: true,
                           ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              )
-            : const SizedBox.shrink(),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  name,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Theme.of(context).brightness == Brightness.dark
+                                        ? Colors.white
+                                        : Colors.black87,
+                                  ),
+                                ),
+                                if (activeText.isNotEmpty)
+                                  Text(
+                                    activeText,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                          color: Colors.grey,
+                                          fontSize: 11,
+                                        ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  )
+                : const SizedBox.shrink(),
         actions: [
           if (widget.peerUserId != null && widget.peerUserId!.isNotEmpty) ...[
             IconButton(
@@ -485,54 +541,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
       ),
       body: Column(
         children: [
-          // Large profile section below AppBar
-          if (widget.peerUserId != null && widget.peerUserId!.isNotEmpty)
-            StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(widget.peerUserId)
-                  .snapshots(),
-              builder: (context, userSnap) {
-                final u = userSnap.data?.data();
-                final name = (u?['name'] as String?)?.trim() ?? 
-                             widget.initialName ?? 
-                             'User';
-                final avatar = (u?['profileImageUrl'] as String?)?.trim() ?? 
-                               widget.initialAvatarUrl ?? 
-                               '';
-                
-                return Container(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).scaffoldBackgroundColor,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Large profile picture
-                      ProfileAvatar(
-                        radius: 60,
-                        imageUrl: avatar.isNotEmpty ? avatar : null,
-                        displayName: name,
-                        showOnlineIndicator: false,
-                      ),
-                      const SizedBox(height: 16),
-                      // Large bold name
-                      Text(
-                        name,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).brightness == Brightness.dark
-                                  ? Colors.white
-                                  : Colors.black87,
-                            ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
           Expanded(
             child: chatId == null
                 ? const Center(child: Text('No recipient selected'))
@@ -596,8 +604,48 @@ class _MessagesScreenState extends State<MessagesScreen> {
                           bottom: 6,
                         ),
                         reverse: true,
-                        itemCount: docs.length,
+                        itemCount: docs.length + ((widget.peerUserId != null && widget.peerUserId!.isNotEmpty) ? 1 : 0),
                         itemBuilder: (context, index) {
+                          // With reverse: true, the top-most index equals docs.length (header position)
+                          final bool hasHeader = widget.peerUserId != null && widget.peerUserId!.isNotEmpty;
+                          final int headerIndex = docs.length;
+                          if (hasHeader && index == headerIndex) {
+                            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                              stream: _firestore
+                                  .collection('users')
+                                  .doc(widget.peerUserId)
+                                  .snapshots(),
+                              builder: (context, userSnap) {
+                                final u = userSnap.data?.data();
+                                final name = (u?['name'] as String?)?.trim() ?? widget.initialName ?? 'User';
+                                final avatar = (u?['profileImageUrl'] as String?)?.trim() ?? widget.initialAvatarUrl ?? '';
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 24),
+                                  alignment: Alignment.center,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      ProfileAvatar(
+                                        radius: 42,
+                                        imageUrl: avatar.isNotEmpty ? avatar : null,
+                                        displayName: name,
+                                        showOnlineIndicator: false,
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            );
+                          }
                           // With reverse: true, ListView builds from bottom to top
                           // So index 0 is the latest message, index length-1 is the oldest
                           // We need to reverse the index to get messages in chronological order
@@ -641,8 +689,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                               bool isSeen = false;
                               Color bubbleColor;
                               Color textColor;
-                              
-                              final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+                              final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
                               
                               if (isMine) {
                                 // Message sent by current user - check if peer has seen it
@@ -660,14 +707,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                   isSeen = false;
                                 }
                                 
-                                // Sent messages: black in light mode, gray in dark mode
-                                if (isDarkMode) {
-                                  bubbleColor = Colors.grey.shade500;
-                                  textColor = Colors.white;
-                                } else {
-                                  bubbleColor = Colors.black;
-                                  textColor = Colors.white;
-                                }
+                                // Sent messages: Blue/White theme
+                                bubbleColor = Colors.blue.shade400;
+                                textColor = Colors.white;
                               } else {
                                 // Message received from peer - check if current user has seen it
                                 final currentUserViewedAt = chatData['lastViewedAt_$_currentUid'] as Timestamp?;
@@ -675,12 +717,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                     messageTimestamp != null &&
                                     currentUserViewedAt.toDate().isAfter(messageTimestamp.toDate());
                                 
-                                // Received messages: gray in light mode, white in dark mode
+                                // Received messages
                                 if (isDarkMode) {
                                   bubbleColor = Colors.white;
                                   textColor = Colors.black;
                                 } else {
-                                  bubbleColor = Colors.grey.shade300;
+                                  bubbleColor = Colors.grey.shade200; // subtle contrast on white background
                                   textColor = Colors.black;
                                 }
                               }
@@ -715,6 +757,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                               imageUrl: peerAvatar.isNotEmpty ? peerAvatar : null,
                                               displayName: null,
                                               userId: widget.peerUserId,
+                                            showOnlineIndicator: false,
                                             ),
                                           ),
                                         Builder(
@@ -1280,7 +1323,10 @@ class _UserInfoPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('User Information'),
+        title: const Text(
+          'User Information',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance

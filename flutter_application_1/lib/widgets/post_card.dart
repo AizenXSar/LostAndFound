@@ -33,9 +33,21 @@ class PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bgColor = isDark
+        ? Colors.white.withOpacity(0.09) // slightly stronger in dark mode
+        : Colors.black.withOpacity(0.04); // subtle on light
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           child: (title.isNotEmpty || avatarUrl.isNotEmpty || postedByUserId.isEmpty)
@@ -66,7 +78,7 @@ class PostCard extends StatelessWidget {
                     return Row(
                       children: [
                         ProfileAvatar(
-                          radius: 18,
+                          radius: 22,
                           imageUrl: avatar.isNotEmpty ? avatar : null,
                           displayName: displayName.isNotEmpty ? displayName : null,
                           userId: postedByUserId.isNotEmpty ? postedByUserId : null,
@@ -90,6 +102,14 @@ class PostCard extends StatelessWidget {
                                   ).textTheme.bodySmall?.color?.withOpacity(0.6),
                                 ),
                                 overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                timeAgo,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: Colors.grey, fontSize: 11),
                               ),
                             ],
                           ),
@@ -126,25 +146,47 @@ class PostCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (description.isNotEmpty)
-                RichText(
-                  text: TextSpan(
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    children: [
-                      TextSpan(
-                        text: '$itemTitle ',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                (postedByUserId.isEmpty)
+                    ? RichText(
+                        text: TextSpan(
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16),
+                          children: [
+                            TextSpan(
+                              text: '$itemTitle ',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            TextSpan(text: description),
+                          ],
+                        ),
+                      )
+                    : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                        stream: FirebaseFirestore.instance
+                            .collection('admins')
+                            .doc(postedByUserId)
+                            .snapshots(),
+                        builder: (context, adminSnap) {
+                          final isAdmin = adminSnap.data?.exists ?? false;
+                          if (isAdmin) {
+                            return Text(
+                              description,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16),
+                            );
+                          }
+                          return RichText(
+                            text: TextSpan(
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16),
+                              children: [
+                                TextSpan(
+                                  text: '$itemTitle ',
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                TextSpan(text: description),
+                              ],
+                            ),
+                          );
+                        },
                       ),
-                      TextSpan(text: description),
-                    ],
-                  ),
-                ),
               const SizedBox(height: 4),
-              Text(
-                timeAgo,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: Colors.grey),
-              ),
             ],
           ),
         ),
@@ -160,25 +202,28 @@ class PostCard extends StatelessWidget {
           },
           child: Hero(
             tag: 'image_${id}_${imageUrl.hashCode}',
-            child: Image.network(
-              imageUrl,
-              fit: BoxFit.fitWidth,
-              width: double.infinity,
-              loadingBuilder: (context, child, progress) => progress == null
-                  ? child
-                  : Container(
-                      height: 220,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.06),
-                      child: const Center(child: CircularProgressIndicator()),
-                    ),
-              errorBuilder: (_, __, ___) => Container(
-                height: 220,
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withOpacity(0.06),
-                child: const Center(child: Icon(Icons.broken_image, size: 48)),
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.fitWidth,
+                width: double.infinity,
+                loadingBuilder: (context, child, progress) => progress == null
+                    ? child
+                    : Container(
+                        height: 220,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.06),
+                        child: const Center(child: CircularProgressIndicator()),
+                      ),
+                errorBuilder: (_, __, ___) => Container(
+                  height: 220,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withOpacity(0.06),
+                  child: const Center(child: Icon(Icons.broken_image, size: 48)),
+                ),
               ),
             ),
           ),
@@ -189,6 +234,7 @@ class PostCard extends StatelessWidget {
         ),
         const SizedBox(height: 8),
       ],
+      ),
     );
   }
 
@@ -196,7 +242,7 @@ class PostCard extends StatelessWidget {
     return Row(
       children: [
         ProfileAvatar(
-          radius: 18,
+          radius: 22,
           displayName: null,
           userId: postedByUserId.isNotEmpty ? postedByUserId : null,
         ),
@@ -219,6 +265,14 @@ class PostCard extends StatelessWidget {
                   ).textTheme.bodySmall?.color?.withOpacity(0.6),
                 ),
                 overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                timeAgo,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.grey, fontSize: 11),
               ),
             ],
           ),
@@ -248,7 +302,7 @@ class PostCard extends StatelessWidget {
     return Row(
       children: [
         ProfileAvatar(
-          radius: 18,
+          radius: 22,
           imageUrl: avatar.isNotEmpty ? avatar : null,
           displayName: displayName.isNotEmpty ? displayName : null,
           userId: postedByUserId.isNotEmpty ? postedByUserId : null,
@@ -270,6 +324,14 @@ class PostCard extends StatelessWidget {
                   color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.6),
                 ),
                 overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                timeAgo,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.grey, fontSize: 11),
               ),
             ],
           ),

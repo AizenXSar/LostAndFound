@@ -29,7 +29,7 @@ class _ArchivePageState extends State<ArchivePage> {
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 40,
-        title: const Text('Archive'),
+        title: const Text('Archive', style: TextStyle(fontWeight: FontWeight.w700)),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(60),
           child: Padding(
@@ -387,7 +387,7 @@ class _PostDetailsPage extends StatelessWidget {
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Archive Details'),
+        title: const Text('Archive Details', style: TextStyle(fontWeight: FontWeight.w700)),
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: firestore.collection('items').doc(postId).snapshots(),

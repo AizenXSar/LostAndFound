@@ -75,7 +75,7 @@ class _LogsPageState extends State<LogsPage> {
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 40,
-        title: const Text('Login Logs'),
+        title: const Text('Login Logs', style: TextStyle(fontWeight: FontWeight.w700)),
       ),
       body: Column(
         children: [
