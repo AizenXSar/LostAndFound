@@ -1,0 +1,131 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is the owner
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Helper function to check if user is an admin
+    function isAdmin() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Notifications collection
+    match /notifications/{notificationId} {
+      // Allow users to read their own notifications
+      allow read: if isAuthenticated() && resource.data.toUserId == request.auth.uid;
+      
+      // Allow users to update their own notifications (e.g., mark as read)
+      allow update: if isAuthenticated() && resource.data.toUserId == request.auth.uid;
+      
+      // Allow users to delete their own notifications
+      allow delete: if isAuthenticated() && resource.data.toUserId == request.auth.uid;
+      
+      // Allow authenticated users to create notifications (for app to send notifications)
+      allow create: if isAuthenticated() && request.resource.data.toUserId is string;
+    }
+
+    // FCM Tokens collection
+    match /fcmTokens/{userId} {
+      // Users can read and write their own FCM token
+      allow read, write: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // Notification Requests collection (for Cloud Functions)
+    match /notificationRequests/{requestId} {
+      // Allow authenticated users to create notification requests
+      allow create: if isAuthenticated();
+      // Only allow reading own requests or admin access (optional)
+      allow read: if isAuthenticated();
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // Admins can read all users, regular users can read their own data
+      allow read: if isAuthenticated() && (isAdmin() || userId == request.auth.uid);
+      // Admins can update any user, regular users can update their own data
+      allow update: if isAuthenticated() && (isAdmin() || userId == request.auth.uid);
+      // Allow authenticated users to create user documents
+      allow create: if isAuthenticated() && userId == request.auth.uid;
+      // Admins can delete users
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Admins collection
+    match /admins/{adminId} {
+      // Admins can read all admins, regular users can read their own admin data if they have one
+      allow read: if isAuthenticated() && (isAdmin() || adminId == request.auth.uid);
+      // Admins can update any admin, regular users can update their own admin data
+      allow update: if isAuthenticated() && (isAdmin() || adminId == request.auth.uid);
+      // Only admins can create admin documents
+      allow create: if isAuthenticated() && isAdmin();
+      // Only admins can delete admin documents
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Items collection
+    match /items/{itemId} {
+      // Allow authenticated users to read all items
+      allow read: if isAuthenticated();
+      // Allow authenticated users to create items
+      allow create: if isAuthenticated();
+      // Allow users to update items they posted
+      allow update: if isAuthenticated() && resource.data.postedBy == request.auth.uid;
+      // Allow users to delete items they posted
+      allow delete: if isAuthenticated() && resource.data.postedBy == request.auth.uid;
+    }
+
+    // Chats collection
+    match /chats/{chatId} {
+      // Allow users to read chats they are part of
+      allow read: if isAuthenticated() && request.auth.uid in resource.data.users;
+      // Allow users to create chats
+      allow create: if isAuthenticated() && request.auth.uid in request.resource.data.users;
+      // Allow users to update chats they are part of
+      allow update: if isAuthenticated() && request.auth.uid in resource.data.users;
+    }
+
+    // Messages subcollection
+    match /chats/{chatId}/messages/{messageId} {
+      // Allow users to read messages in chats they are part of
+      allow read: if isAuthenticated();
+      // Allow authenticated users to create messages
+      allow create: if isAuthenticated();
+      // Allow users to delete their own messages
+      allow delete: if isAuthenticated() && resource.data.senderId == request.auth.uid;
+    }
+
+    // Calls collection
+    match /calls/{callId} {
+      // Allow users to read calls where they are the caller or peer
+      allow read: if isAuthenticated() && 
+        (resource.data.callerId == request.auth.uid || resource.data.peerId == request.auth.uid);
+      // Allow authenticated users to create calls
+      allow create: if isAuthenticated();
+      // Allow users to update calls where they are the caller or peer
+      allow update: if isAuthenticated() && 
+        (resource.data.callerId == request.auth.uid || resource.data.peerId == request.auth.uid);
+    }
+
+    // Transactions collection
+    match /transactions/{transactionId} {
+      // Allow authenticated users to read transactions
+      allow read: if isAuthenticated();
+      // Allow authenticated users to create transactions
+      allow create: if isAuthenticated();
+    }
+
+    // Default: deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

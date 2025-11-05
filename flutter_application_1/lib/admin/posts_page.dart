@@ -43,6 +43,7 @@ class _AdminPostsPageState extends State<AdminPostsPage> {
             stream: widget.firestore
                 .collection('items')
                 .orderBy('createdAt', descending: true)
+                .limit(500) // Limit for better performance
                 .snapshots(),
             builder: (context, snap) {
               if (snap.connectionState != ConnectionState.active) {

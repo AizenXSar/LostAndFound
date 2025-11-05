@@ -1,10 +1,21 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../services/auth_service.dart';
+import '../services/call_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/profile_avatar.dart';
+import 'incoming_call_screen.dart';
+import 'calling_screen.dart';
 
 class MessagesScreen extends StatefulWidget {
   final String? peerUserId;
@@ -24,8 +35,20 @@ class _MessagesScreenState extends State<MessagesScreen> {
   final FocusNode _messageFocusNode = FocusNode();
   final ValueNotifier<bool> _isFocusedNotifier = ValueNotifier<bool>(false);
   final ImagePicker _picker = ImagePicker();
+  final AudioRecorder _audioRecorder = AudioRecorder();
+  final AudioPlayer _audioPlayer = AudioPlayer();
   int _previousMessageCount = 0;
   bool _isInitialLoad = true;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _callSubscription;
+  
+  // Recording state
+  bool _isRecording = false;
+  String? _recordingPath;
+  Duration _recordingDuration = Duration.zero;
+  Timer? _recordingTimer;
+  String? _currentlyPlayingAudioUrl;
+  bool _isPlayingAudio = false;
+  bool _isSendingRecording = false; // Prevent double-sending
   
   @override
   void initState() {
@@ -40,6 +63,101 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _messageFocusNode.addListener(() {
       _isFocusedNotifier.value = _messageFocusNode.hasFocus;
     });
+    // Listen for incoming calls
+    _listenForIncomingCalls();
+  }
+
+  void _listenForIncomingCalls() {
+    final currentUid = _currentUid;
+    if (currentUid == null) return;
+
+    // Listen for incoming calls
+    // Note: This query requires a composite index in Firestore
+    // If you get an error, create the index in Firebase Console:
+    // Collection: calls
+    // Fields: peerId (Ascending), status (Ascending), createdAt (Descending)
+    _firestore
+        .collection('calls')
+        .where('peerId', isEqualTo: currentUid)
+        .where('status', isEqualTo: 'ringing')
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            if (snapshot.docs.isNotEmpty && mounted) {
+              final callDoc = snapshot.docs.first;
+              final callData = callDoc.data();
+              final callId = callDoc.id;
+
+              // Show incoming call screen
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => IncomingCallScreen(
+                    callId: callId,
+                    roomName: callData['roomName'] ?? '',
+                    callerId: callData['callerId'] ?? '',
+                    callerName: callData['callerName'] ?? 'Unknown',
+                    callerAvatarUrl: callData['callerAvatarUrl'],
+                    isVideoCall: callData['type'] == 'video',
+                  ),
+                  fullscreenDialog: true,
+                ),
+              );
+            }
+          },
+          onError: (error) {
+            print('Error listening for incoming calls: $error');
+            // If index error, try without orderBy as fallback
+            if (error.toString().contains('index')) {
+              print('Firestore index missing. Please create composite index for calls collection.');
+              print('Fields: peerId (Ascending), status (Ascending), createdAt (Descending)');
+              // Fallback: listen without orderBy
+              _firestore
+                  .collection('calls')
+                  .where('peerId', isEqualTo: currentUid)
+                  .where('status', isEqualTo: 'ringing')
+                  .limit(1)
+                  .snapshots()
+                  .listen(
+                    (snapshot) {
+                      if (snapshot.docs.isNotEmpty && mounted) {
+                        // Sort manually by createdAt
+                        final sortedDocs = snapshot.docs.toList()
+                          ..sort((a, b) {
+                            final aTime = (a.data()['createdAt'] as Timestamp?)?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
+                            final bTime = (b.data()['createdAt'] as Timestamp?)?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
+                            return bTime.compareTo(aTime);
+                          });
+                        
+                        if (sortedDocs.isNotEmpty) {
+                          final callDoc = sortedDocs.first;
+                          final callData = callDoc.data();
+                          final callId = callDoc.id;
+
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => IncomingCallScreen(
+                                callId: callId,
+                                roomName: callData['roomName'] ?? '',
+                                callerId: callData['callerId'] ?? '',
+                                callerName: callData['callerName'] ?? 'Unknown',
+                                callerAvatarUrl: callData['callerAvatarUrl'],
+                                isVideoCall: callData['type'] == 'video',
+                              ),
+                              fullscreenDialog: true,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    onError: (fallbackError) {
+                      print('Fallback call listener also failed: $fallbackError');
+                    },
+                  );
+            }
+          },
+        );
   }
   
   Future<void> _ensureChatExists() async {
@@ -125,6 +243,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return (a.compareTo(b) < 0) ? '${a}_$b' : '${b}_$a';
   }
 
+
   Future<void> _pickAndSendMedia() async {
     final chatId = _chatId;
     if (chatId == null) return;
@@ -156,11 +275,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   if (v == null) return;
                   final url = await AuthService.uploadImageToCloudinary(v.path);
                   if (url == null) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Video upload failed or not supported.')),
-                      );
-                    }
                     return;
                   }
                   await _sendMediaMessage(url, 'video');
@@ -215,7 +329,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       await _firestore.collection('chats').doc(chatId).set({
         'users': [_currentUid, widget.peerUserId],
         'updatedAt': FieldValue.serverTimestamp(),
-        'lastMessage': type == 'image' ? '[photo]' : '[video]',
+        'lastMessage': type == 'image' ? '[photo]' : type == 'video' ? '[video]' : '[audio]',
         // Store peer user info permanently (for the other user viewing this chat)
         'peerName_${widget.peerUserId}': peerName,
         'peerAvatar_${widget.peerUserId}': peerAvatar,
@@ -227,18 +341,68 @@ class _MessagesScreenState extends State<MessagesScreen> {
       if (type == 'image') {
         payload['imageUrl'] = url;
         payload['type'] = 'image';
-      } else {
+      } else if (type == 'video') {
         payload['videoUrl'] = url;
         payload['type'] = 'video';
+      } else if (type == 'audio') {
+        payload['audioUrl'] = url;
+        payload['type'] = 'audio';
       }
       await _firestore.collection('chats').doc(chatId).collection('messages').add(payload);
+      
+      // Create notification for the recipient
+      try {
+        // Get sender's name (current user) - check both users and admins collections
+        String? senderName;
+        try {
+          final senderDoc = await _firestore.collection('users').doc(_currentUid).get();
+          final senderData = senderDoc.data();
+          if (senderData != null) {
+            final rawName = (senderData['name'] as String?)?.trim() ?? '';
+            senderName = rawName.isNotEmpty ? rawName : ((senderData['fullName'] as String?)?.trim() ?? '');
+          }
+          
+          // If not found in users, try admins collection
+          if (senderName == null || senderName.isEmpty) {
+            try {
+              final adminDoc = await _firestore.collection('admins').doc(_currentUid).get();
+              final adminData = adminDoc.data();
+              if (adminData != null) {
+                final rawName = (adminData['name'] as String?)?.trim() ?? '';
+                senderName = rawName.isNotEmpty ? rawName : ((adminData['fullName'] as String?)?.trim() ?? '');
+              }
+            } catch (_) {}
+          }
+        } catch (_) {}
+        
+        senderName ??= 'Someone';
+        
+        // Create notification based on message type
+        String messagePreview;
+        if (type == 'image') {
+          messagePreview = '[Photo]';
+        } else if (type == 'video') {
+          messagePreview = '[Video]';
+        } else if (type == 'audio') {
+          messagePreview = '[Voice Message]';
+        } else {
+          messagePreview = '[Media]';
+        }
+        
+        await NotificationService.notifyNewMessage(
+          toUserId: widget.peerUserId!,
+          senderName: senderName,
+          messagePreview: messagePreview,
+          chatId: chatId,
+        );
+      } catch (e) {
+        print('Error creating message notification: $e');
+        // Don't fail the message send if notification fails
+      }
+      
       // Don't auto-scroll - let messages appear naturally at the bottom
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send: $e')),
-        );
-      }
+      // Silent fail - no notification
     }
   }
 
@@ -306,16 +470,53 @@ class _MessagesScreenState extends State<MessagesScreen> {
         'createdAt': FieldValue.serverTimestamp(),
       });
       
+      // Create notification for the recipient
+      try {
+        // Get sender's name (current user) - check both users and admins collections
+        String? senderName;
+        try {
+          final senderDoc = await _firestore.collection('users').doc(_currentUid).get();
+          final senderData = senderDoc.data();
+          if (senderData != null) {
+            final rawName = (senderData['name'] as String?)?.trim() ?? '';
+            senderName = rawName.isNotEmpty ? rawName : ((senderData['fullName'] as String?)?.trim() ?? '');
+          }
+          
+          // If not found in users, try admins collection
+          if (senderName == null || senderName.isEmpty) {
+            try {
+              final adminDoc = await _firestore.collection('admins').doc(_currentUid).get();
+              final adminData = adminDoc.data();
+              if (adminData != null) {
+                final rawName = (adminData['name'] as String?)?.trim() ?? '';
+                senderName = rawName.isNotEmpty ? rawName : ((adminData['fullName'] as String?)?.trim() ?? '');
+              }
+            } catch (_) {}
+          }
+        } catch (_) {}
+        
+        senderName ??= 'Someone';
+        
+        // Create notification with message preview (limit to 50 characters)
+        final messagePreview = text.length > 50 ? '${text.substring(0, 50)}...' : text;
+        
+        await NotificationService.notifyNewMessage(
+          toUserId: widget.peerUserId!,
+          senderName: senderName,
+          messagePreview: messagePreview,
+          chatId: chatId,
+        );
+      } catch (e) {
+        print('Error creating message notification: $e');
+        // Don't fail the message send if notification fails
+      }
+      
       // Don't force scroll - let the StreamBuilder naturally add the message
       // This prevents reload/refresh when sending messages
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send message: $e')),
-        );
-      }
       // Restore text if sending failed
       _textController.text = text;
+      // Silent fail - no notification
     }
   }
 
@@ -384,8 +585,151 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
+
+  Future<void> _startRecording() async {
+    try {
+      // Request microphone permission
+      final status = await Permission.microphone.request();
+      if (!status.isGranted) {
+        return;
+      }
+
+      // Get temporary directory for recording
+      final directory = await getTemporaryDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final path = '${directory.path}/audio_$timestamp.m4a';
+
+      // Start recording
+      await _audioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+        ),
+        path: path,
+      );
+
+      setState(() {
+        _isRecording = true;
+        _recordingPath = path;
+        _recordingDuration = Duration.zero;
+      });
+
+      // Start timer to update duration
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (mounted) {
+          setState(() {
+            _recordingDuration = Duration(seconds: timer.tick);
+          });
+        }
+      });
+    } catch (e) {
+      // Silent fail - no notification
+    }
+  }
+
+  Future<void> _stopRecordingAndSend() async {
+    // Prevent double-sending
+    if (_isSendingRecording || !_isRecording) return;
+    
+    setState(() {
+      _isSendingRecording = true;
+    });
+
+    try {
+      _recordingTimer?.cancel();
+      _recordingTimer = null;
+
+      if (_recordingPath != null) {
+        final path = await _audioRecorder.stop();
+        
+        // Update UI immediately to show smooth transition
+        setState(() {
+          _isRecording = false;
+        });
+        
+        if (path != null) {
+          // Upload audio file
+          final url = await AuthService.uploadImageToCloudinary(path);
+          if (url != null) {
+            await _sendMediaMessage(url, 'audio');
+          }
+
+          // Delete temporary file after upload
+          try {
+            final file = File(path);
+            if (await file.exists()) {
+              await file.delete();
+            }
+          } catch (_) {}
+        }
+      }
+
+      setState(() {
+        _recordingPath = null;
+        _recordingDuration = Duration.zero;
+        _isSendingRecording = false;
+      });
+    } catch (e) {
+      // Silent fail - no notification
+      setState(() {
+        _isRecording = false;
+        _recordingPath = null;
+        _recordingDuration = Duration.zero;
+        _isSendingRecording = false;
+      });
+    }
+  }
+
+
+  Future<void> _playAudio(String url) async {
+    try {
+      if (_currentlyPlayingAudioUrl == url && _isPlayingAudio) {
+        // Stop if already playing
+        await _audioPlayer.stop();
+        setState(() {
+          _isPlayingAudio = false;
+          _currentlyPlayingAudioUrl = null;
+        });
+      } else {
+        // Play new audio
+        if (_currentlyPlayingAudioUrl != null) {
+          await _audioPlayer.stop();
+        }
+        await _audioPlayer.play(UrlSource(url));
+        setState(() {
+          _isPlayingAudio = true;
+          _currentlyPlayingAudioUrl = url;
+        });
+
+        // Listen for completion
+        _audioPlayer.onPlayerComplete.listen((_) {
+          if (mounted) {
+            setState(() {
+              _isPlayingAudio = false;
+              _currentlyPlayingAudioUrl = null;
+            });
+          }
+        });
+      }
+    } catch (e) {
+      // Silent fail - no notification
+    }
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return '$minutes:$seconds';
+  }
+
   @override
   void dispose() {
+    _callSubscription?.cancel();
+    _recordingTimer?.cancel();
+    _audioRecorder.dispose();
+    _audioPlayer.dispose();
     _textController.dispose();
     _scrollController.dispose();
     _messageFocusNode.dispose();
@@ -398,15 +742,20 @@ class _MessagesScreenState extends State<MessagesScreen> {
     final chatId = _chatId;
     return Scaffold(
       backgroundColor: Theme.of(context).brightness == Brightness.dark ? Colors.black : Colors.white,
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).brightness == Brightness.dark ? Colors.black : Colors.white,
-        foregroundColor: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          color: Colors.blue,
-          onPressed: () => Navigator.pop(context),
-        ),
-        titleSpacing: 0,
+      body: Stack(
+        children: [
+          // Main content
+          Scaffold(
+            backgroundColor: Theme.of(context).brightness == Brightness.dark ? Colors.black : Colors.white,
+            appBar: AppBar(
+              backgroundColor: Theme.of(context).brightness == Brightness.dark ? Colors.black : Colors.white,
+              foregroundColor: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                color: Colors.blue,
+                onPressed: () => Navigator.pop(context),
+              ),
+              titleSpacing: 0,
             title: widget.peerUserId != null && widget.peerUserId!.isNotEmpty
                 ? StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                     stream: FirebaseFirestore.instance
@@ -508,16 +857,76 @@ class _MessagesScreenState extends State<MessagesScreen> {
               icon: const Icon(Icons.call),
               color: Colors.blue,
               tooltip: 'Call',
-              onPressed: () {
-                // TODO: Implement call functionality
+              onPressed: () async {
+                if (widget.peerUserId == null || widget.peerUserId!.isEmpty || _currentUid == null) {
+                  return;
+                }
+
+                // Send audio call invitation
+                final result = await CallService.startAudioCall(
+                  peerUserId: widget.peerUserId!,
+                  peerName: widget.initialName ?? 'User',
+                  peerAvatarUrl: widget.initialAvatarUrl,
+                );
+
+                if (!mounted) return;
+
+                if (result['success'] == true) {
+                  // Show calling screen - wait for peer to accept
+                  final callId = result['callId'] as String;
+                  final roomName = result['roomName'] as String;
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => CallingScreen(
+                        callId: callId,
+                        roomName: roomName,
+                        peerName: widget.initialName ?? 'User',
+                        peerAvatarUrl: widget.initialAvatarUrl,
+                        isVideoCall: false,
+                      ),
+                      fullscreenDialog: true,
+                    ),
+                  );
+                }
+                // Silent fail - no notification
               },
             ),
             IconButton(
               icon: const Icon(Icons.videocam),
               color: Colors.blue,
               tooltip: 'Video Call',
-              onPressed: () {
-                // TODO: Implement video call functionality
+              onPressed: () async {
+                if (widget.peerUserId == null || widget.peerUserId!.isEmpty || _currentUid == null) {
+                  return;
+                }
+
+                // Send video call invitation
+                final result = await CallService.startVideoCall(
+                  peerUserId: widget.peerUserId!,
+                  peerName: widget.initialName ?? 'User',
+                  peerAvatarUrl: widget.initialAvatarUrl,
+                );
+
+                if (!mounted) return;
+
+                if (result['success'] == true) {
+                  // Show calling screen - wait for peer to accept
+                  final callId = result['callId'] as String;
+                  final roomName = result['roomName'] as String;
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => CallingScreen(
+                        callId: callId,
+                        roomName: roomName,
+                        peerName: widget.initialName ?? 'User',
+                        peerAvatarUrl: widget.initialAvatarUrl,
+                        isVideoCall: true,
+                      ),
+                      fullscreenDialog: true,
+                    ),
+                  );
+                }
+                // Silent fail - no notification
               },
             ),
             IconButton(
@@ -539,7 +948,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
           ],
         ],
       ),
-      body: Column(
+            body: Column(
         children: [
           Expanded(
             child: chatId == null
@@ -657,6 +1066,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                           final text = (m['text'] as String?) ?? '';
                           final imageUrl = (m['imageUrl'] as String?) ?? '';
                           final videoUrl = (m['videoUrl'] as String?) ?? '';
+                          final audioUrl = (m['audioUrl'] as String?) ?? '';
                           final dt = (m['createdAt'] as Timestamp?)?.toDate().toLocal();
                           final prevDt = reversedIndex > 0
                               ? (docs[reversedIndex - 1].data()['createdAt'] as Timestamp?)?.toDate().toLocal()
@@ -863,6 +1273,78 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                                     child: ClipRRect(
                                                       borderRadius: BorderRadius.circular(14),
                                                       child: Image.network(imageUrl, fit: BoxFit.cover),
+                                                    ),
+                                                  );
+                                                }
+                                                
+                                                // For audio messages, show waveform design
+                                                if (audioUrl.isNotEmpty) {
+                                                  final isPlaying = _currentlyPlayingAudioUrl == audioUrl && _isPlayingAudio;
+                                                  return Container(
+                                                    margin: const EdgeInsets.symmetric(vertical: 4),
+                                                    constraints: BoxConstraints(
+                                                      maxWidth: isMine 
+                                                          ? MediaQuery.of(context).size.width * 0.72
+                                                          : MediaQuery.of(context).size.width * 0.65,
+                                                    ),
+                                                    child: Material(
+                                                      color: Colors.transparent,
+                                                      child: InkWell(
+                                                        onTap: () => _playAudio(audioUrl),
+                                                        borderRadius: BorderRadius.only(
+                                                          topLeft: Radius.circular(isMine ? 18 : 6),
+                                                          topRight: Radius.circular(isMine ? 6 : 18),
+                                                          bottomLeft: const Radius.circular(18),
+                                                          bottomRight: const Radius.circular(18),
+                                                        ),
+                                                        child: Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                                          decoration: BoxDecoration(
+                                                            color: Colors.white,
+                                                            borderRadius: BorderRadius.only(
+                                                              topLeft: Radius.circular(isMine ? 18 : 6),
+                                                              topRight: Radius.circular(isMine ? 6 : 18),
+                                                              bottomLeft: const Radius.circular(18),
+                                                              bottomRight: const Radius.circular(18),
+                                                            ),
+                                                            boxShadow: [
+                                                              BoxShadow(
+                                                                color: Colors.black.withOpacity(0.08),
+                                                                blurRadius: 8,
+                                                                spreadRadius: 0,
+                                                                offset: const Offset(0, 2),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                          child: Row(
+                                                            mainAxisSize: MainAxisSize.max,
+                                                            children: [
+                                                              // Blue circle with microphone icon
+                                                              Container(
+                                                                width: 40,
+                                                                height: 40,
+                                                                decoration: const BoxDecoration(
+                                                                  color: Colors.blue,
+                                                                  shape: BoxShape.circle,
+                                                                ),
+                                                                child: Icon(
+                                                                  isPlaying ? Icons.pause : Icons.mic,
+                                                                  color: Colors.white,
+                                                                  size: 20,
+                                                                ),
+                                                              ),
+                                                              const SizedBox(width: 12),
+                                                              // Waveform visualization
+                                                              Flexible(
+                                                                child: _AudioWaveform(
+                                                                  isPlaying: isPlaying,
+                                                                  barColor: Colors.blue,
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ),
                                                     ),
                                                   );
                                                 }
@@ -1165,18 +1647,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                             color: Colors.transparent,
                                             child: InkWell(
                                               customBorder: const CircleBorder(),
-                                              onTap: () {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  const SnackBar(content: Text('Voice messages coming soon')),
-                                                );
-                                              },
+                                              onTap: _isRecording ? null : _startRecording,
                                               child: Container(
                                                 width: iconSize,
                                                 height: iconSize,
                                                 alignment: Alignment.center,
-                                                child: const Icon(
-                                                  Icons.mic_outlined,
-                                                  color: blueColor,
+                                                child: Icon(
+                                                  _isRecording ? Icons.mic : Icons.mic_outlined,
+                                                  color: _isRecording ? Colors.red : blueColor,
                                                   size: iconInnerSize,
                                                 ),
                                               ),
@@ -1245,9 +1723,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                 child: InkWell(
                                   customBorder: const CircleBorder(),
                                   onTap: () {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Emoji picker coming soon')),
-                                    );
+                                    // Emoji picker coming soon - no notification
                                   },
                                   child: Container(
                                     width: 36,
@@ -1303,9 +1779,143 @@ class _MessagesScreenState extends State<MessagesScreen> {
               ),
             ),
           ),
-        ],
-      ),
-    );
+          ],
+        ),
+          ),
+          // Recording UI overlay - modern design
+          if (_isRecording)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 20,
+                      spreadRadius: 0,
+                      offset: const Offset(0, -4),
+                    ),
+                  ],
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Recording indicator and waveform
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          children: [
+                            // Red recording indicator
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.red.withOpacity(0.5),
+                                    blurRadius: 8,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Duration
+                            Text(
+                              _formatDuration(_recordingDuration),
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            // Waveform during recording
+                            Expanded(
+                              child: _AudioWaveform(
+                                isPlaying: true,
+                                barColor: Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      // Send button (centered)
+                      Center(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _isSendingRecording ? null : _stopRecordingAndSend,
+                            borderRadius: BorderRadius.circular(16),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                              decoration: BoxDecoration(
+                                color: _isSendingRecording ? Colors.grey : Colors.blue,
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: _isSendingRecording ? null : [
+                                  BoxShadow(
+                                    color: Colors.blue.withOpacity(0.3),
+                                    blurRadius: 12,
+                                    spreadRadius: 0,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_isSendingRecording)
+                                    const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    )
+                                  else
+                                    const Icon(
+                                      Icons.send,
+                                      color: Colors.white,
+                                      size: 24,
+                                    ),
+                                  if (_isSendingRecording) const SizedBox(width: 12),
+                                  Text(
+                                    _isSendingRecording ? 'Sending...' : 'Send',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ], // Close Stack children
+      ), // Close Stack
+    ); // Close Scaffold
   }
 }
 
@@ -1511,6 +2121,123 @@ class _InfoRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// Audio waveform visualization widget
+class _AudioWaveform extends StatefulWidget {
+  const _AudioWaveform({
+    required this.isPlaying,
+    required this.barColor,
+  });
+
+  final bool isPlaying;
+  final Color barColor;
+
+  @override
+  State<_AudioWaveform> createState() => _AudioWaveformState();
+}
+
+class _AudioWaveformState extends State<_AudioWaveform> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  final List<double> _barHeights = [
+    0.3, 0.6, 0.4, 0.8, 0.5, 0.7, 0.3, 0.9, 0.4, 0.6, 0.5, 0.8, 0.3, 0.7, 0.4,
+    0.6, 0.5, 0.8, 0.3, 0.7, 0.4, 0.6, 0.5, 0.8, 0.3, 0.7, 0.4, 0.9, 0.5, 0.6,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    if (widget.isPlaying) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_AudioWaveform oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isPlaying != oldWidget.isPlaying) {
+      if (widget.isPlaying) {
+        _controller.repeat();
+      } else {
+        _controller.stop();
+        _controller.reset();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 24,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              // Calculate how many bars we can fit based on available width
+              // Each bar: width (2.5) + left margin (1.5) + right margin (1.5) = 5.5px
+              final barWidth = 5.5;
+              final maxBars = (constraints.maxWidth / barWidth).floor();
+              final barsToShow = maxBars > 0 ? maxBars.clamp(10, _barHeights.length) : _barHeights.length;
+              
+              // If we need to reduce bars, show every nth bar
+              final step = barsToShow < _barHeights.length 
+                  ? (_barHeights.length / barsToShow).ceil() 
+                  : 1;
+              
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(_barHeights.length ~/ step, (i) {
+                  final index = i * step;
+                  if (index >= _barHeights.length) return const SizedBox.shrink();
+                  
+                  // Animate bars with a wave effect
+                  final phase = (index * 0.2) + (_controller.value * 2 * math.pi);
+                  final amplitude = (widget.isPlaying ? (0.5 + 0.5 * (1 + math.sin(phase).abs())) : 0.5);
+                  final height = _barHeights[index] * amplitude;
+                  
+                  // Some bars are dots (very low amplitude)
+                  if (height < 0.2) {
+                    return Container(
+                      width: 2,
+                      height: 2,
+                      margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                      decoration: BoxDecoration(
+                        color: widget.barColor,
+                        shape: BoxShape.circle,
+                      ),
+                    );
+                  }
+                  
+                  return Container(
+                    width: 2.5,
+                    height: 8 + (height * 16), // Min 8, max 24
+                    margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                    decoration: BoxDecoration(
+                      color: widget.barColor,
+                      borderRadius: BorderRadius.circular(1.25),
+                    ),
+                  );
+                }),
+              );
+            },
+          );
+        },
       ),
     );
   }

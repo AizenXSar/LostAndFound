@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
+import 'services/fcm_service.dart' show FCMService, firebaseMessagingBackgroundHandler;
 import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
@@ -10,20 +12,82 @@ import 'admin/home.dart';
 import 'theme/theme_controller.dart';
 
 void main() async {
+  // Ensure Flutter binding is initialized first
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Add a small delay to ensure native platform is ready
+  await Future.delayed(const Duration(milliseconds: 100));
+
+  // Initialize Firebase - this must complete successfully before the app runs
+  FirebaseApp? app;
   try {
-    await Firebase.initializeApp(
+    app = await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    print('Firebase initialized successfully');
-  } catch (e) {
+    print('Firebase initialized successfully: ${app.name}');
+  } catch (e, stackTrace) {
     print('Firebase initialization error: $e');
-    // Continue anyway - the error will be shown in AuthWrapper
+    print('Stack trace: $stackTrace');
+    
+    // Try to check if Firebase is already initialized
+    try {
+      app = Firebase.app();
+      print('Firebase was already initialized: ${app.name}');
+    } catch (_) {
+      // Firebase is not initialized - show error screen
+      runApp(MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                const Text(
+                  'Firebase Initialization Failed',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    'Error: $e',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    // Restart the app
+                    main();
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ));
+      return; // Exit early if Firebase fails
+    }
   }
 
   // Load saved theme preference
   await ThemeController.instance.init();
+
+  // Initialize FCM for push notifications
+  try {
+    // Set background message handler
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    
+    // Initialize FCM service
+    await FCMService.initialize();
+    print('FCM Service initialized successfully');
+  } catch (e) {
+    print('Error initializing FCM Service: $e');
+    // Continue app startup even if FCM fails
+  }
 
   runApp(const MyApp());
 }

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/auth_service.dart';
+import '../services/notification_service.dart';
 import '../utils/sweet_alert.dart';
 
 class CreatePostPage extends StatefulWidget {
@@ -205,7 +206,34 @@ class _CreatePostPageState extends State<CreatePostPage> {
       'commentCount': 0,
     };
     try {
-      await widget.firestore.collection('items').add(payload);
+      final itemRef = await widget.firestore.collection('items').add(payload);
+      final itemId = itemRef.id;
+      
+      // Send notifications to all users about the new post
+      try {
+        // Get all users to notify them about the new post
+        final usersSnapshot = await widget.firestore.collection('users').get();
+        final itemTitle = _titleController.text.trim();
+        final itemType = _type; // 'lost' or 'found'
+        
+        // Create notifications for all users
+        for (final userDoc in usersSnapshot.docs) {
+          final userId = userDoc.id;
+          // Don't notify the admin who created the post
+          if (userId == user.uid) continue;
+          
+          await NotificationService.notifyItemMatch(
+            toUserId: userId,
+            itemTitle: itemTitle,
+            itemType: itemType,
+            itemId: itemId,
+          );
+        }
+      } catch (e) {
+        print('Error creating post notifications: $e');
+        // Don't fail the post creation if notification fails
+      }
+      
       if (!mounted) return;
       setState(() => _isSubmitting = false);
       Navigator.pop(context);

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'login_screen.dart';
+import '../services/auth_service.dart';
+import 'main_nav.dart';
+import '../admin/home.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -10,6 +13,107 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  bool _isCheckingAuth = true;
+  bool _isLoggedIn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAuthAndNavigate();
+  }
+
+  Future<void> _checkAuthAndNavigate() async {
+    try {
+      // Check if user is logged in
+      final loggedIn = await AuthService.isLoggedIn();
+      
+      if (loggedIn) {
+        // Check if user is admin
+        final isAdmin = await AuthService.currentUserIsAdmin();
+        
+        if (mounted) {
+          setState(() {
+            _isLoggedIn = true;
+            _isCheckingAuth = false;
+          });
+          
+          // Wait a bit to show splash screen, then navigate
+          await Future.delayed(const Duration(milliseconds: 1500));
+          
+          if (mounted) {
+            // Navigate to appropriate page based on user type
+            final Widget destination = isAdmin ? const AdminHomePage() : const MainNav();
+            Navigator.of(context).pushReplacement(
+              PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) => destination,
+                transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                  // Fade transition
+                  final fadeAnimation = Tween<double>(
+                    begin: 0.0,
+                    end: 1.0,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeInOut,
+                    ),
+                  );
+
+                  // Slide transition
+                  final slideAnimation = Tween<Offset>(
+                    begin: const Offset(0.0, 0.1),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                    ),
+                  );
+
+                  // Scale transition
+                  final scaleAnimation = Tween<double>(
+                    begin: 0.95,
+                    end: 1.0,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                    ),
+                  );
+
+                  return FadeTransition(
+                    opacity: fadeAnimation,
+                    child: SlideTransition(
+                      position: slideAnimation,
+                      child: ScaleTransition(
+                        scale: scaleAnimation,
+                        child: child,
+                      ),
+                    ),
+                  );
+                },
+                transitionDuration: const Duration(milliseconds: 600),
+              ),
+            );
+          }
+        }
+      } else {
+        // User not logged in, show splash with Get Started button
+        if (mounted) {
+          setState(() {
+            _isCheckingAuth = false;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error checking auth status: $e');
+      // On error, show login screen
+      if (mounted) {
+        setState(() {
+          _isCheckingAuth = false;
+        });
+      }
+    }
+  }
 
   void _navigateToLogin() {
     Navigator.of(context).pushReplacement(
@@ -120,33 +224,48 @@ class _SplashScreenState extends State<SplashScreen> {
                     ),
                   ),
                 ),
-                // Get Started Button at the bottom
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _navigateToLogin,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                // Get Started Button at the bottom - only show if not logged in and not checking auth
+                if (!_isCheckingAuth && !_isLoggedIn)
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _navigateToLogin,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          foregroundColor: Theme.of(context).colorScheme.onPrimary,
                         ),
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                        foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                      ),
-                      child: const Text(
-                        'Get Started',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                        child: const Text(
+                          'Get Started',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                // Show loading indicator while checking auth or if logged in (while navigating)
+                if (_isCheckingAuth || _isLoggedIn)
+                  Positioned(
+                    bottom: 40,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

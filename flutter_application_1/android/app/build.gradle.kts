@@ -9,15 +9,40 @@ plugins {
 android {
     namespace = "com.example.flutter_application_1"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Let Flutter manage NDK version - remove explicit override to avoid CMake issues
+    // ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_11.toString()
+    }
+
+    // Suppress warnings about obsolete Java versions in dependencies
+    tasks.withType<JavaCompile>().configureEach {
+        options.compilerArgs.addAll(listOf(
+            "-Xlint:-options",
+            "-Xlint:-deprecation", 
+            "-Xlint:-unchecked",
+            "-Xmaxwarns", "0",
+            "-nowarn"
+        ))
+        options.encoding = "UTF-8"
+    }
+    
+    // Suppress warnings for all subprojects
+    tasks.withType<JavaCompile> {
+        options.isIncremental = true
+        options.compilerArgs.addAll(listOf(
+            "-Xlint:-options", 
+            "-Xlint:-deprecation", 
+            "-Xlint:-unchecked",
+            "-Xmaxwarns", "0"
+        ))
     }
 
     defaultConfig {
@@ -53,4 +78,8 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-messaging")
+    
+    // Core library desugaring for flutter_local_notifications
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }

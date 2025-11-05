@@ -12,13 +12,21 @@ class AdminDashboardPage extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     
+    // Use cached data with limits to improve performance
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: firestore.collection('items').snapshots(),
+      stream: firestore
+          .collection('items')
+          .limit(1000) // Limit items query for better performance
+          .snapshots(),
       builder: (context, itemsSnap) {
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: firestore.collection('users').snapshots(),
+          stream: firestore
+              .collection('users')
+              .limit(1000) // Limit users query for better performance
+              .snapshots(),
           builder: (context, usersSnap) {
-            if (!itemsSnap.hasData || !usersSnap.hasData) {
+            // Show loading only if we don't have any data yet
+            if (itemsSnap.connectionState == ConnectionState.waiting && !itemsSnap.hasData) {
               return Center(
                 child: CircularProgressIndicator(
                   color: theme.colorScheme.primary,
@@ -26,9 +34,13 @@ class AdminDashboardPage extends StatelessWidget {
               );
             }
 
-            final items =
-                itemsSnap.data?.docs.map((e) => e.data()).toList() ?? [];
-            final users = usersSnap.data?.docs ?? [];
+            // Use cached data if available, otherwise show loading
+            final items = itemsSnap.hasData
+                ? itemsSnap.data!.docs.map((e) => e.data()).toList()
+                : <Map<String, dynamic>>[];
+            final users = usersSnap.hasData
+                ? usersSnap.data!.docs
+                : <QueryDocumentSnapshot<Map<String, dynamic>>>[];
             final lostCount = items
                 .where((e) => (e['type'] ?? 'lost') == 'lost')
                 .length;

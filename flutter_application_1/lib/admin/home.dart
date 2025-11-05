@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../utils/app_logger.dart';
 
 import 'dashboard_page.dart';
 import 'posts_page.dart';
@@ -26,10 +27,47 @@ class _AdminHomePageState extends State<AdminHomePage> {
   int _selectedIndex = 0;
   VoidCallback? _openNewTransaction;
   
+  // Lazy-loaded pages - only create when accessed
+  final Map<int, Widget> _pageCache = {};
+  
   void _setOpenNewTransactionCallback(VoidCallback callback) {
     setState(() {
       _openNewTransaction = callback;
     });
+  }
+  
+  // Lazy load pages - only create when accessed
+  Widget _buildPage(int index) {
+    // Return cached page if available
+    if (_pageCache.containsKey(index)) {
+      return _pageCache[index]!;
+    }
+    
+    // Create page only when accessed
+    Widget page;
+    switch (index) {
+      case 0:
+        page = const _DashboardHost();
+        break;
+      case 1:
+        page = const _PostsHost();
+        break;
+      case 2:
+        page = const _TransactionsHost();
+        break;
+      case 3:
+        page = const _UsersHost();
+        break;
+      case 4:
+        page = const _SettingsHost();
+        break;
+      default:
+        page = const Center(child: Text('Page not found'));
+    }
+    
+    // Cache the page
+    _pageCache[index] = page;
+    return page;
   }
 
   @override
@@ -102,17 +140,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
           const SizedBox(width: 8),
         ],
       ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: const [
-          // Pages render their own Firestore instances internally where needed
-          _DashboardHost(),
-          _PostsHost(),
-          _TransactionsHost(),
-          _UsersHost(),
-          _SettingsHost(),
-        ],
-      ),
+      body: _buildPage(_selectedIndex),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: Theme.of(context).brightness == Brightness.dark 
@@ -156,75 +184,10 @@ class _AdminHomePageState extends State<AdminHomePage> {
                   onTap: () => setState(() => _selectedIndex = 2),
                 ),
                 // Users with badge - only count unviewed new users
-                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: _firestore
-                      .collection('users')
-                      .snapshots(),
-                  builder: (context, snap) {
-                    int newUserCount = 0;
-                    if (snap.hasData && snap.data != null) {
-                      final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
-                      newUserCount = snap.data!.docs.where((doc) {
-                        try {
-                          final data = doc.data();
-                          final createdAt = data['createdAt'];
-                          final lastViewedAt = data['lastViewedAt'];
-                          
-                          // Parse createdAt
-                          DateTime? createdDate;
-                          if (createdAt != null) {
-                            if (createdAt is Timestamp) {
-                              createdDate = createdAt.toDate();
-                            } else if (createdAt is DateTime) {
-                              createdDate = createdAt;
-                            } else if (createdAt is Map && createdAt['_seconds'] != null) {
-                              // Handle Firestore Timestamp map format
-                              final seconds = createdAt['_seconds'] as int;
-                              createdDate = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
-                            }
-                          }
-                          
-                          // Parse lastViewedAt
-                          DateTime? viewedDate;
-                          if (lastViewedAt != null) {
-                            if (lastViewedAt is Timestamp) {
-                              viewedDate = lastViewedAt.toDate();
-                            } else if (lastViewedAt is DateTime) {
-                              viewedDate = lastViewedAt;
-                            } else if (lastViewedAt is Map && lastViewedAt['_seconds'] != null) {
-                              // Handle Firestore Timestamp map format
-                              final seconds = lastViewedAt['_seconds'] as int;
-                              viewedDate = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
-                            }
-                          }
-                          
-                          // Count only if created in last 7 days AND not viewed yet
-                          if (createdDate == null) {
-                            return false; // No created date, skip
-                          }
-                          
-                          final isNew = createdDate.isAfter(sevenDaysAgo);
-                          final isUnviewed = viewedDate == null || 
-                                            viewedDate.isBefore(createdDate);
-                          
-                          return isNew && isUnviewed;
-                        } catch (e) {
-                          // If there's any error parsing, skip this user
-                          print('Error parsing user data for badge counter: $e');
-                          return false;
-                        }
-                      }).length;
-                    }
-                    return _AdminNavItem(
-                      icon: Icons.people,
-                      label: 'Users',
-                      isSelected: _selectedIndex == 3,
-                      onTap: () => setState(() => _selectedIndex = 3),
-                      badgeCount: newUserCount > 0 
-                          ? (newUserCount > 99 ? '99+' : newUserCount.toString()) 
-                          : null,
-                    );
-                  },
+                _UserCounterBadge(
+                  firestore: _firestore,
+                  isSelected: _selectedIndex == 3,
+                  onTap: () => setState(() => _selectedIndex = 3),
                 ),
                 // Settings
                 _AdminNavItem(
@@ -351,6 +314,119 @@ class _SettingsHost extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AdminSettingsPage(firestore: FirebaseFirestore.instance);
+  }
+}
+
+// User counter badge widget - separate to maintain state and improve reliability
+class _UserCounterBadge extends StatefulWidget {
+  final FirebaseFirestore firestore;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _UserCounterBadge({
+    required this.firestore,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  State<_UserCounterBadge> createState() => _UserCounterBadgeState();
+}
+
+class _UserCounterBadgeState extends State<_UserCounterBadge> {
+  int _cachedCount = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: widget.firestore.collection('users').snapshots(),
+      builder: (context, snap) {
+        // Handle errors - show cached count if available
+        if (snap.hasError) {
+          AppLogger.error('UserCounterBadge error', snap.error);
+          // Use cached count if available, otherwise show no badge
+          return _AdminNavItem(
+            icon: Icons.people,
+            label: 'Users',
+            isSelected: widget.isSelected,
+            onTap: widget.onTap,
+            badgeCount: _cachedCount > 0 
+                ? (_cachedCount > 99 ? '99+' : _cachedCount.toString()) 
+                : null,
+          );
+        }
+
+        // Calculate count if we have data
+        int newUserCount = _cachedCount; // Default to cached count
+        if (snap.hasData && snap.data != null) {
+          try {
+            final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
+            newUserCount = snap.data!.docs.where((doc) {
+              try {
+                final data = doc.data();
+                final createdAt = data['createdAt'];
+                final lastViewedAt = data['lastViewedAt'];
+                
+                // Parse createdAt
+                DateTime? createdDate;
+                if (createdAt != null) {
+                  if (createdAt is Timestamp) {
+                    createdDate = createdAt.toDate();
+                  } else if (createdAt is DateTime) {
+                    createdDate = createdAt;
+                  } else if (createdAt is Map && createdAt['_seconds'] != null) {
+                    final seconds = createdAt['_seconds'] as int;
+                    createdDate = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+                  }
+                }
+                
+                // Parse lastViewedAt
+                DateTime? viewedDate;
+                if (lastViewedAt != null) {
+                  if (lastViewedAt is Timestamp) {
+                    viewedDate = lastViewedAt.toDate();
+                  } else if (lastViewedAt is DateTime) {
+                    viewedDate = lastViewedAt;
+                  } else if (lastViewedAt is Map && lastViewedAt['_seconds'] != null) {
+                    final seconds = lastViewedAt['_seconds'] as int;
+                    viewedDate = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+                  }
+                }
+                
+                // Count only if created in last 7 days AND not viewed yet
+                if (createdDate == null) {
+                  return false;
+                }
+                
+                final isNew = createdDate.isAfter(sevenDaysAgo);
+                final isUnviewed = viewedDate == null || viewedDate.isBefore(createdDate);
+                
+                return isNew && isUnviewed;
+              } catch (e) {
+                AppLogger.debug('Error parsing user data: $e');
+                return false;
+              }
+            }).length;
+            
+            // Cache the count for error recovery
+            _cachedCount = newUserCount;
+          } catch (e) {
+            AppLogger.error('Error calculating count', e);
+            // Use cached count on error
+          }
+        }
+
+        return _AdminNavItem(
+          icon: Icons.people,
+          label: 'Users',
+          isSelected: widget.isSelected,
+          onTap: widget.onTap,
+          badgeCount: newUserCount > 0 
+              ? (newUserCount > 99 ? '99+' : newUserCount.toString()) 
+              : null,
+        );
+      },
+    );
   }
 }
 

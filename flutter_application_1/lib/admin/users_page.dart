@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/sweet_alert.dart';
+import '../utils/app_logger.dart';
 
 class AdminUsersPage extends StatefulWidget {
   const AdminUsersPage({
@@ -34,6 +35,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
   Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _getAllUsersStream() {
     // Use simple snapshots without orderBy to include all users
     // Some users might not have createdAt field (especially older admins)
+    // Remove limit to show all users
     final usersStream = widget.firestore
         .collection('users')
         .snapshots();
@@ -58,6 +60,8 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
         final usersDocs = usersSnap?.docs ?? [];
         final adminsDocs = adminsSnap?.docs ?? [];
         
+        // AppLogger.debug('Merging: ${usersDocs.length} users + ${adminsDocs.length} admins');
+        
         // Map to store unique users by ID - use a wrapper to preserve admin status
         final Map<String, QueryDocumentSnapshot<Map<String, dynamic>>> uniqueUsers = {};
         
@@ -70,27 +74,17 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
           uniqueUsers[doc.id] = doc;
         }
         
-        // Add users from users collection (also include admins from users collection)
+        // Add users from users collection - include ALL users
         for (var doc in usersDocs) {
-          final data = doc.data();
-          // Check if this user is an admin (from users collection)
-          final role = (data['role'] as String?) ?? '';
-          final isAdminFlag = data['isAdmin'] == true;
-          final isAdmin = isAdminFlag || role.toLowerCase() == 'admin';
-          
-          if (isAdmin) {
-            // If not already in admins collection, mark it for admin display
-            // Still treat as admin, but use users collection data
+          // Always add users - if they're also in admins collection, admins collection takes precedence
+          // But if they're not in admins collection, still show them from users collection
+          if (!uniqueUsers.containsKey(doc.id)) {
             uniqueUsers[doc.id] = doc;
-          } else {
-            // Regular user - only add if not already added (as admin from admins collection)
-            if (!uniqueUsers.containsKey(doc.id)) {
-              uniqueUsers[doc.id] = doc;
-            }
           }
         }
         
         final combinedList = uniqueUsers.values.toList();
+        // AppLogger.debug('Combined list has ${combinedList.length} unique users');
         
         // Sort combined list by createdAt (admins without createdAt will go to end)
         combinedList.sort((a, b) {
@@ -136,12 +130,14 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
     
     // Start listening immediately
     usersSub = usersStream.listen((snap) {
+      // AppLogger.debug('Received ${snap.docs.length} users from users collection');
       usersSnap = snap;
       if (!usersReady) {
         usersReady = true;
       }
       emitIfReady();
     }, onError: (error) {
+      AppLogger.error('Error loading users collection', error);
       // If users stream fails, continue with empty list for users
       usersSnap = null;
       if (!usersReady) {
@@ -151,12 +147,14 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
     });
     
     adminsSub = adminsStream.listen((snap) {
+      // AppLogger.debug('Received ${snap.docs.length} admins from admins collection');
       adminsSnap = snap;
       if (!adminsReady) {
         adminsReady = true;
       }
       emitIfReady();
     }, onError: (error) {
+      AppLogger.error('Error loading admins collection', error);
       // If admins collection doesn't exist or fails, continue without it
       adminsSnap = null;
       if (!adminsReady) {
@@ -189,20 +187,49 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
           child: StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
             stream: _getAllUsersStream(),
             builder: (context, snap) {
-              if (snap.connectionState != ConnectionState.active && !snap.hasData) {
+              // Show loading only if we don't have any data yet
+              if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
+              
+              // Handle errors
               if (snap.hasError) {
+                AppLogger.error('Error loading users', snap.error);
                 return Center(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Text('Failed to load users: ${snap.error}'),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
+                        const SizedBox(height: 16),
+                        Text('Failed to load users: ${snap.error}'),
+                      ],
+                    ),
                   ),
                 );
               }
+              
               final docs = snap.data ?? [];
+              // AppLogger.debug('Loaded ${docs.length} users');
+              
               if (docs.isEmpty) {
-                return const Center(child: Text('No users yet'));
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.people_outline, size: 64, color: Colors.grey[400]),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No users yet',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
               }
               return ValueListenableBuilder<String>(
                 valueListenable: _queryListenable,
