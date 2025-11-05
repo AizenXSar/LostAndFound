@@ -197,6 +197,9 @@ class AuthService {
     String password,
     String name,
     String? profileImageUrl,
+    String? idFrontUrl,
+    String? idBackUrl,
+    String? phone,
   ) async {
     try {
       // 1. Create user in Firebase Authentication
@@ -216,7 +219,10 @@ class AuthService {
         await _firestore.collection('users').doc(user.uid).set({
           'name': name.trim(),
           'email': email.trim(),
+          'phone': phone?.trim() ?? '',
           'profileImageUrl': profileImageUrl ?? '',
+          'idFrontUrl': idFrontUrl ?? '',
+          'idBackUrl': idBackUrl ?? '',
           'role': 'user',
           'isAdmin': false,
           'isOnline': true, // User is online when they register

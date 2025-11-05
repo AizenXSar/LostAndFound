@@ -52,10 +52,12 @@ class _AdminTransactionsPageState extends State<AdminTransactionsPage> {
   
   void openNewTransactionModal() {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => CreateTransactionPage(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => CreateTransactionPage(
           firestore: widget.firestore,
         ),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
       ),
     );
   }
@@ -339,6 +341,22 @@ class _TransactionCard extends StatelessWidget {
                         width: 70,
                         height: 70,
                         fit: BoxFit.cover,
+                        cacheWidth: 140, // 2x for retina
+                        cacheHeight: 140,
+                        loadingBuilder: (context, child, progress) => progress == null
+                            ? child
+                            : Container(
+                                width: 70,
+                                height: 70,
+                                color: theme.colorScheme.surfaceContainerHighest,
+                                child: const Center(
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                ),
+                              ),
                         errorBuilder: (_, __, ___) => Container(
                           width: 70,
                           height: 70,
@@ -784,6 +802,21 @@ class _ClaimerInfo extends StatelessWidget {
                         claimProof!,
                         width: double.infinity,
                         fit: BoxFit.cover,
+                        cacheWidth: 800, // Limit cache size for better performance
+                        loadingBuilder: (context, child, progress) => progress == null
+                            ? child
+                            : Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                              ),
                         errorBuilder: (_, __, ___) => Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(

@@ -211,7 +211,7 @@ String _formatRelativeDate(dynamic raw) {
   final d = dt.toLocal();
   final now = DateTime.now();
   final diff = now.difference(d);
-  String _hmm(DateTime x) {
+  String hmm(DateTime x) {
     final h12 = x.hour % 12 == 0 ? 12 : x.hour % 12;
     final mm = x.minute.toString().padLeft(2, '0');
     final ampm = x.hour >= 12 ? 'PM' : 'AM';
@@ -220,8 +220,8 @@ String _formatRelativeDate(dynamic raw) {
   if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
   if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
   if (diff.inHours < 24) return '${diff.inHours}h ago';
-  if (diff.inDays == 1) return 'Yesterday at ${_hmm(d)}';
-  if (diff.inDays < 7) return '${diff.inDays} days ago at ${_hmm(d)}';
+  if (diff.inDays == 1) return 'Yesterday at ${hmm(d)}';
+  if (diff.inDays < 7) return '${diff.inDays} days ago at ${hmm(d)}';
   final weeks = (diff.inDays / 7).floor();
   if (weeks < 5) return '${weeks}w ago';
   final months = (diff.inDays / 30).floor();

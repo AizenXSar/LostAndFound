@@ -146,46 +146,10 @@ class PostCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (description.isNotEmpty)
-                (postedByUserId.isEmpty)
-                    ? RichText(
-                        text: TextSpan(
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16),
-                          children: [
-                            TextSpan(
-                              text: '$itemTitle ',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            TextSpan(text: description),
-                          ],
-                        ),
-                      )
-                    : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                        stream: FirebaseFirestore.instance
-                            .collection('admins')
-                            .doc(postedByUserId)
-                            .snapshots(),
-                        builder: (context, adminSnap) {
-                          final isAdmin = adminSnap.data?.exists ?? false;
-                          if (isAdmin) {
-                            return Text(
-                              description,
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16),
-                            );
-                          }
-                          return RichText(
-                            text: TextSpan(
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16),
-                              children: [
-                                TextSpan(
-                                  text: '$itemTitle ',
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                TextSpan(text: description),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+                Text(
+                  description,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16),
+                ),
               const SizedBox(height: 4),
             ],
           ),

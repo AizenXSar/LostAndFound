@@ -135,6 +135,32 @@ class _AdminPostsPageState extends State<AdminPostsPage> {
                                   width: 56,
                                   height: 56,
                                   fit: BoxFit.cover,
+                                  cacheWidth: 112, // 2x for retina
+                                  cacheHeight: 112,
+                                  loadingBuilder: (context, child, progress) => progress == null
+                                      ? child
+                                      : Container(
+                                          width: 56,
+                                          height: 56,
+                                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.08),
+                                          child: const Center(
+                                            child: SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            ),
+                                          ),
+                                        ),
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 56,
+                                    height: 56,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.08),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(Icons.image, size: 20),
+                                  ),
                                 )
                               : Container(
                                   width: 56,
@@ -187,7 +213,7 @@ class _AdminPostsPageState extends State<AdminPostsPage> {
                                   await widget.firestore
                                       .collection('items')
                                       .doc(id)
-                                      .update({'status': 'claimed'});
+                                      .update({'status': 'archived'});
                                   if (context.mounted) {
                                     await SweetAlert.success(
                                       context: context,
@@ -409,6 +435,18 @@ class _PostDetailsPage extends StatelessWidget {
                       imageUrl,
                       width: double.infinity,
                       fit: BoxFit.cover,
+                      cacheWidth: 800, // Limit cache size for better performance
+                      loadingBuilder: (context, child, progress) => progress == null
+                          ? child
+                          : Container(
+                              height: 200,
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
                       errorBuilder: (_, __, ___) => Container(
                         height: 200,
                         color: theme.colorScheme.surfaceContainerHighest,

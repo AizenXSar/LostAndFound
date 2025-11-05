@@ -284,7 +284,7 @@ class _CallingScreenState extends State<CallingScreen> with TickerProviderStateM
                       // Camera preview without border/outline
                       ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        child: Container(
+                        child: SizedBox(
                           width: 130,
                           height: 173, // 16:9 aspect ratio
                           child: CameraPreview(_cameraController!),

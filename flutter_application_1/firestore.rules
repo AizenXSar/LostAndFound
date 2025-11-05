@@ -76,10 +76,30 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       // Allow authenticated users to create items
       allow create: if isAuthenticated();
-      // Allow users to update items they posted
-      allow update: if isAuthenticated() && resource.data.postedBy == request.auth.uid;
+      // Allow users to update items they posted OR update like/comment fields (for heart react) OR admins can update items (for claiming)
+      allow update: if isAuthenticated() && 
+        (resource.data.postedBy == request.auth.uid || 
+         // Allow updating likedBy and likeCount fields for any authenticated user
+         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy', 'likeCount', 'commentCount'])) ||
+         // Allow admins to update items (for claiming items)
+         isAdmin());
       // Allow users to delete items they posted
       allow delete: if isAuthenticated() && resource.data.postedBy == request.auth.uid;
+      
+      // Comments subcollection
+      match /comments/{commentId} {
+        // Allow authenticated users to read all comments
+        allow read: if isAuthenticated();
+        // Allow authenticated users to create comments
+        allow create: if isAuthenticated() && request.resource.data.authorId == request.auth.uid;
+        // Allow users to update their own comments OR update like fields (for heart react on comments)
+        allow update: if isAuthenticated() && 
+          (resource.data.authorId == request.auth.uid ||
+           // Allow updating likedBy and likeCount fields for any authenticated user
+           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy', 'likeCount'])));
+        // Allow users to delete their own comments
+        allow delete: if isAuthenticated() && resource.data.authorId == request.auth.uid;
+      }
     }
 
     // Chats collection
@@ -120,6 +140,18 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       // Allow authenticated users to create transactions
       allow create: if isAuthenticated();
+    }
+
+    // Login Logs collection
+    match /loginLogs/{logId} {
+      // Only admins can read login logs
+      allow read: if isAuthenticated() && isAdmin();
+      // Allow authenticated users to create their own login logs
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      // Only admins can delete login logs
+      allow delete: if isAuthenticated() && isAdmin();
+      // No updates allowed
+      allow update: if false;
     }
 
     // Default: deny all other access

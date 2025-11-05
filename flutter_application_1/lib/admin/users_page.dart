@@ -68,15 +68,32 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
         // Clear and rebuild admin IDs set
         _adminCollectionIds.clear();
         
-        // Add admins from admins collection first (will override if duplicate)
-        for (var doc in adminsDocs) {
-          _adminCollectionIds.add(doc.id);
-          uniqueUsers[doc.id] = doc;
+        // Create a map to store user data for easy lookup
+        final Map<String, QueryDocumentSnapshot<Map<String, dynamic>>> usersMap = {};
+        for (var doc in usersDocs) {
+          usersMap[doc.id] = doc;
+        }
+        
+        // Add admins from admins collection
+        for (var adminDoc in adminsDocs) {
+          _adminCollectionIds.add(adminDoc.id);
+          final userId = adminDoc.id;
+          
+          // If this admin also exists in users collection, prefer users collection for display
+          // (users collection has name, email, profileImageUrl)
+          // But keep admin doc reference for admin-specific data
+          if (usersMap.containsKey(userId)) {
+            // Use user document for display (has name, email, etc.)
+            uniqueUsers[userId] = usersMap[userId]!;
+          } else {
+            // Admin not in users collection, use admin data as-is
+            uniqueUsers[adminDoc.id] = adminDoc;
+          }
         }
         
         // Add users from users collection - include ALL users
         for (var doc in usersDocs) {
-          // Always add users - if they're also in admins collection, admins collection takes precedence
+          // Always add users - if they're also in admins collection, we already handled them above
           // But if they're not in admins collection, still show them from users collection
           if (!uniqueUsers.containsKey(doc.id)) {
             uniqueUsers[doc.id] = doc;
@@ -260,20 +277,24 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                     DateTime? bCreated;
                     final aCreatedAt = aData['createdAt'];
                     final bCreatedAt = bData['createdAt'];
-                    if (aCreatedAt is Timestamp) aCreated = aCreatedAt.toDate();
-                    else if (aCreatedAt is DateTime) aCreated = aCreatedAt;
-                    if (bCreatedAt is Timestamp) bCreated = bCreatedAt.toDate();
-                    else if (bCreatedAt is DateTime) bCreated = bCreatedAt;
+                    if (aCreatedAt is Timestamp) {
+                      aCreated = aCreatedAt.toDate();
+                    } else if (aCreatedAt is DateTime) aCreated = aCreatedAt;
+                    if (bCreatedAt is Timestamp) {
+                      bCreated = bCreatedAt.toDate();
+                    } else if (bCreatedAt is DateTime) bCreated = bCreatedAt;
                     
                     // Parse lastViewedAt for both
                     DateTime? aViewed;
                     DateTime? bViewed;
                     final aViewedAt = aData['lastViewedAt'];
                     final bViewedAt = bData['lastViewedAt'];
-                    if (aViewedAt is Timestamp) aViewed = aViewedAt.toDate();
-                    else if (aViewedAt is DateTime) aViewed = aViewedAt;
-                    if (bViewedAt is Timestamp) bViewed = bViewedAt.toDate();
-                    else if (bViewedAt is DateTime) bViewed = bViewedAt;
+                    if (aViewedAt is Timestamp) {
+                      aViewed = aViewedAt.toDate();
+                    } else if (aViewedAt is DateTime) aViewed = aViewedAt;
+                    if (bViewedAt is Timestamp) {
+                      bViewed = bViewedAt.toDate();
+                    } else if (bViewedAt is DateTime) bViewed = bViewedAt;
                     
                     // Check if new and unviewed
                     final aIsNew = aCreated != null && aCreated.isAfter(sevenDaysAgo);
@@ -317,8 +338,13 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                       } else {
                         role = (data['role'] as String?) ?? 'user';
                       }
+                      // Get email and name - try multiple fields
                       final email = (data['email'] as String?) ?? '';
-                      final name = (data['name'] as String?) ?? 'Unnamed';
+                      // Try name, fullName, or displayName
+                      final name = (data['name'] as String?)?.trim() ?? 
+                                   (data['fullName'] as String?)?.trim() ?? 
+                                   (data['displayName'] as String?)?.trim() ?? 
+                                   'Unnamed';
                       final uid = id;
                       final avatar = (data['profileImageUrl'] as String?) ?? '';
                       final theme = Theme.of(context);
@@ -525,7 +551,11 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
       builder: (ctx) {
         final theme = Theme.of(ctx);
         final isDark = theme.brightness == Brightness.dark;
-        final name = (data['name'] as String?) ?? 'Unnamed';
+        // Try name, fullName, or displayName
+        final name = (data['name'] as String?)?.trim() ?? 
+                     (data['fullName'] as String?)?.trim() ?? 
+                     (data['displayName'] as String?)?.trim() ?? 
+                     'Unnamed';
         final email = (data['email'] as String?) ?? '';
         final role = (data['role'] as String?) ?? 'user';
         final avatar = (data['profileImageUrl'] as String?) ?? '';
@@ -704,7 +734,12 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
   }
 
   Future<void> _openEditUser(BuildContext context, String userId, Map<String, dynamic> data) async {
-    _editNameController.text = (data['name'] as String?) ?? '';
+    // Try name, fullName, or displayName
+    final name = (data['name'] as String?)?.trim() ?? 
+                 (data['fullName'] as String?)?.trim() ?? 
+                 (data['displayName'] as String?)?.trim() ?? 
+                 '';
+    _editNameController.text = name;
     _editAvatarController.text = (data['profileImageUrl'] as String?) ?? '';
     await showModalBottomSheet(
       context: context,

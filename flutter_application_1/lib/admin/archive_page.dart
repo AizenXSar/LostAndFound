@@ -48,11 +48,11 @@ class _ArchivePageState extends State<ArchivePage> {
           }
           final allDocs = snap.data?.docs ?? [];
           
-          // Filter for archived items (status = 'claimed')
+          // Filter for archived items (status = 'archived') - not claimed items
           final archivedDocs = allDocs.where((doc) {
             final data = doc.data();
             final status = (data['status'] as String?) ?? '';
-            return status.toLowerCase() == 'claimed';
+            return status.toLowerCase() == 'archived';
           }).toList();
           
           // Sort by createdAt in memory (newest first)
@@ -118,7 +118,7 @@ class _ArchivePageState extends State<ArchivePage> {
                   final id = filtered[index].id;
                   final postedBy = (data['postedBy'] as String?) ?? '';
                   final title = (data['title'] as String?) ?? 'Untitled';
-                  final status = (data['status'] as String?) ?? 'claimed';
+                  final status = (data['status'] as String?) ?? 'archived';
                   final imageUrl = (data['imageUrl'] as String?) ?? '';
                   final location = (data['location'] as String?) ?? '';
                   final theme = Theme.of(context);
@@ -159,6 +159,32 @@ class _ArchivePageState extends State<ArchivePage> {
                               width: 56,
                               height: 56,
                               fit: BoxFit.cover,
+                              cacheWidth: 112, // 2x for retina
+                              cacheHeight: 112,
+                              loadingBuilder: (context, child, progress) => progress == null
+                                  ? child
+                                  : Container(
+                                      width: 56,
+                                      height: 56,
+                                      color: theme.colorScheme.onSurface.withOpacity(0.08),
+                                      child: const Center(
+                                        child: SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      ),
+                                    ),
+                              errorBuilder: (_, __, ___) => Container(
+                                width: 56,
+                                height: 56,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.onSurface.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.image, size: 20),
+                              ),
                             )
                           : Container(
                               width: 56,
@@ -352,8 +378,8 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isClaimed = status.toLowerCase() == 'claimed';
-    final color = isClaimed ? Colors.green : Colors.orange;
+    final isArchived = status.toLowerCase() == 'archived';
+    final color = isArchived ? Colors.orange : Colors.green;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
@@ -427,6 +453,18 @@ class _PostDetailsPage extends StatelessWidget {
                       imageUrl,
                       width: double.infinity,
                       fit: BoxFit.cover,
+                      cacheWidth: 800, // Limit cache size for better performance
+                      loadingBuilder: (context, child, progress) => progress == null
+                          ? child
+                          : Container(
+                              height: 200,
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
                       errorBuilder: (_, __, ___) => Container(
                         height: 200,
                         color: theme.colorScheme.surfaceContainerHighest,
