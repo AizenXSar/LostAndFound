@@ -1,21 +1,14 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:record/record.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../services/auth_service.dart';
-import '../services/call_service.dart';
 import '../services/notification_service.dart';
 import '../widgets/profile_avatar.dart';
-import 'incoming_call_screen.dart';
-import 'calling_screen.dart';
 
 class MessagesScreen extends StatefulWidget {
   final String? peerUserId;
@@ -35,20 +28,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
   final FocusNode _messageFocusNode = FocusNode();
   final ValueNotifier<bool> _isFocusedNotifier = ValueNotifier<bool>(false);
   final ImagePicker _picker = ImagePicker();
-  final AudioRecorder _audioRecorder = AudioRecorder();
   final AudioPlayer _audioPlayer = AudioPlayer();
   int _previousMessageCount = 0;
   bool _isInitialLoad = true;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _callSubscription;
   
-  // Recording state
-  bool _isRecording = false;
-  String? _recordingPath;
-  Duration _recordingDuration = Duration.zero;
-  Timer? _recordingTimer;
+  // Audio playback state
   String? _currentlyPlayingAudioUrl;
   bool _isPlayingAudio = false;
-  bool _isSendingRecording = false; // Prevent double-sending
   
   @override
   void initState() {
@@ -63,101 +49,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _messageFocusNode.addListener(() {
       _isFocusedNotifier.value = _messageFocusNode.hasFocus;
     });
-    // Listen for incoming calls
-    _listenForIncomingCalls();
-  }
-
-  void _listenForIncomingCalls() {
-    final currentUid = _currentUid;
-    if (currentUid == null) return;
-
-    // Listen for incoming calls
-    // Note: This query requires a composite index in Firestore
-    // If you get an error, create the index in Firebase Console:
-    // Collection: calls
-    // Fields: peerId (Ascending), status (Ascending), createdAt (Descending)
-    _firestore
-        .collection('calls')
-        .where('peerId', isEqualTo: currentUid)
-        .where('status', isEqualTo: 'ringing')
-        .orderBy('createdAt', descending: true)
-        .limit(1)
-        .snapshots()
-        .listen(
-          (snapshot) {
-            if (snapshot.docs.isNotEmpty && mounted) {
-              final callDoc = snapshot.docs.first;
-              final callData = callDoc.data();
-              final callId = callDoc.id;
-
-              // Show incoming call screen
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => IncomingCallScreen(
-                    callId: callId,
-                    roomName: callData['roomName'] ?? '',
-                    callerId: callData['callerId'] ?? '',
-                    callerName: callData['callerName'] ?? 'Unknown',
-                    callerAvatarUrl: callData['callerAvatarUrl'],
-                    isVideoCall: callData['type'] == 'video',
-                  ),
-                  fullscreenDialog: true,
-                ),
-              );
-            }
-          },
-          onError: (error) {
-            print('Error listening for incoming calls: $error');
-            // If index error, try without orderBy as fallback
-            if (error.toString().contains('index')) {
-              print('Firestore index missing. Please create composite index for calls collection.');
-              print('Fields: peerId (Ascending), status (Ascending), createdAt (Descending)');
-              // Fallback: listen without orderBy
-              _firestore
-                  .collection('calls')
-                  .where('peerId', isEqualTo: currentUid)
-                  .where('status', isEqualTo: 'ringing')
-                  .limit(1)
-                  .snapshots()
-                  .listen(
-                    (snapshot) {
-                      if (snapshot.docs.isNotEmpty && mounted) {
-                        // Sort manually by createdAt
-                        final sortedDocs = snapshot.docs.toList()
-                          ..sort((a, b) {
-                            final aTime = (a.data()['createdAt'] as Timestamp?)?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
-                            final bTime = (b.data()['createdAt'] as Timestamp?)?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
-                            return bTime.compareTo(aTime);
-                          });
-                        
-                        if (sortedDocs.isNotEmpty) {
-                          final callDoc = sortedDocs.first;
-                          final callData = callDoc.data();
-                          final callId = callDoc.id;
-
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => IncomingCallScreen(
-                                callId: callId,
-                                roomName: callData['roomName'] ?? '',
-                                callerId: callData['callerId'] ?? '',
-                                callerName: callData['callerName'] ?? 'Unknown',
-                                callerAvatarUrl: callData['callerAvatarUrl'],
-                                isVideoCall: callData['type'] == 'video',
-                              ),
-                              fullscreenDialog: true,
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    onError: (fallbackError) {
-                      print('Fallback call listener also failed: $fallbackError');
-                    },
-                  );
-            }
-          },
-        );
   }
   
   Future<void> _ensureChatExists() async {
@@ -241,50 +132,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
     final b = widget.peerUserId!;
     // Deterministic chat id (lexicographical order)
     return (a.compareTo(b) < 0) ? '${a}_$b' : '${b}_$a';
-  }
-
-
-  Future<void> _pickAndSendMedia() async {
-    final chatId = _chatId;
-    if (chatId == null) return;
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('Send Photo'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600);
-                  if (x == null) return;
-                  final url = await AuthService.uploadImageToCloudinary(x.path);
-                  if (url == null) return;
-                  await _sendMediaMessage(url, 'image');
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.videocam_outlined),
-                title: const Text('Send Video'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  final v = await _picker.pickVideo(source: ImageSource.gallery, maxDuration: const Duration(minutes: 3));
-                  if (v == null) return;
-                  final url = await AuthService.uploadImageToCloudinary(v.path);
-                  if (url == null) {
-                    return;
-                  }
-                  await _sendMediaMessage(url, 'video');
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   Future<void> _sendMediaMessage(String url, String type) async {
@@ -586,102 +433,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
 
-  Future<void> _startRecording() async {
-    try {
-      // Request microphone permission
-      final status = await Permission.microphone.request();
-      if (!status.isGranted) {
-        return;
-      }
-
-      // Get temporary directory for recording
-      final directory = await getTemporaryDirectory();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final path = '${directory.path}/audio_$timestamp.m4a';
-
-      // Start recording
-      await _audioRecorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100,
-        ),
-        path: path,
-      );
-
-      setState(() {
-        _isRecording = true;
-        _recordingPath = path;
-        _recordingDuration = Duration.zero;
-      });
-
-      // Start timer to update duration
-      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (mounted) {
-          setState(() {
-            _recordingDuration = Duration(seconds: timer.tick);
-          });
-        }
-      });
-    } catch (e) {
-      // Silent fail - no notification
-    }
-  }
-
-  Future<void> _stopRecordingAndSend() async {
-    // Prevent double-sending
-    if (_isSendingRecording || !_isRecording) return;
-    
-    setState(() {
-      _isSendingRecording = true;
-    });
-
-    try {
-      _recordingTimer?.cancel();
-      _recordingTimer = null;
-
-      if (_recordingPath != null) {
-        final path = await _audioRecorder.stop();
-        
-        // Update UI immediately to show smooth transition
-        setState(() {
-          _isRecording = false;
-        });
-        
-        if (path != null) {
-          // Upload audio file
-          final url = await AuthService.uploadImageToCloudinary(path);
-          if (url != null) {
-            await _sendMediaMessage(url, 'audio');
-          }
-
-          // Delete temporary file after upload
-          try {
-            final file = File(path);
-            if (await file.exists()) {
-              await file.delete();
-            }
-          } catch (_) {}
-        }
-      }
-
-      setState(() {
-        _recordingPath = null;
-        _recordingDuration = Duration.zero;
-        _isSendingRecording = false;
-      });
-    } catch (e) {
-      // Silent fail - no notification
-      setState(() {
-        _isRecording = false;
-        _recordingPath = null;
-        _recordingDuration = Duration.zero;
-        _isSendingRecording = false;
-      });
-    }
-  }
-
-
   Future<void> _playAudio(String url) async {
     try {
       if (_currentlyPlayingAudioUrl == url && _isPlayingAudio) {
@@ -717,18 +468,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return '$minutes:$seconds';
-  }
-
   @override
   void dispose() {
-    _callSubscription?.cancel();
-    _recordingTimer?.cancel();
-    _audioRecorder.dispose();
     _audioPlayer.dispose();
     _textController.dispose();
     _scrollController.dispose();
@@ -853,82 +594,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 : const SizedBox.shrink(),
         actions: [
           if (widget.peerUserId != null && widget.peerUserId!.isNotEmpty) ...[
-            IconButton(
-              icon: const Icon(Icons.call),
-              color: Colors.blue,
-              tooltip: 'Call',
-              onPressed: () async {
-                if (widget.peerUserId == null || widget.peerUserId!.isEmpty || _currentUid == null) {
-                  return;
-                }
-
-                // Send audio call invitation
-                final result = await CallService.startAudioCall(
-                  peerUserId: widget.peerUserId!,
-                  peerName: widget.initialName ?? 'User',
-                  peerAvatarUrl: widget.initialAvatarUrl,
-                );
-
-                if (!mounted) return;
-
-                if (result['success'] == true) {
-                  // Show calling screen - wait for peer to accept
-                  final callId = result['callId'] as String;
-                  final roomName = result['roomName'] as String;
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => CallingScreen(
-                        callId: callId,
-                        roomName: roomName,
-                        peerName: widget.initialName ?? 'User',
-                        peerAvatarUrl: widget.initialAvatarUrl,
-                        isVideoCall: false,
-                      ),
-                      fullscreenDialog: true,
-                    ),
-                  );
-                }
-                // Silent fail - no notification
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.videocam),
-              color: Colors.blue,
-              tooltip: 'Video Call',
-              onPressed: () async {
-                if (widget.peerUserId == null || widget.peerUserId!.isEmpty || _currentUid == null) {
-                  return;
-                }
-
-                // Send video call invitation
-                final result = await CallService.startVideoCall(
-                  peerUserId: widget.peerUserId!,
-                  peerName: widget.initialName ?? 'User',
-                  peerAvatarUrl: widget.initialAvatarUrl,
-                );
-
-                if (!mounted) return;
-
-                if (result['success'] == true) {
-                  // Show calling screen - wait for peer to accept
-                  final callId = result['callId'] as String;
-                  final roomName = result['roomName'] as String;
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => CallingScreen(
-                        callId: callId,
-                        roomName: roomName,
-                        peerName: widget.initialName ?? 'User',
-                        peerAvatarUrl: widget.initialAvatarUrl,
-                        isVideoCall: true,
-                      ),
-                      fullscreenDialog: true,
-                    ),
-                  );
-                }
-                // Silent fail - no notification
-              },
-            ),
             IconButton(
               icon: const Icon(Icons.info_outline),
               color: Colors.blue,
@@ -1526,149 +1191,62 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    // Icon group (left side) - transforms when focused or typing
-                    ValueListenableBuilder<bool>(
-                      valueListenable: _isFocusedNotifier,
-                      builder: (context, isFocused, _) {
-                        return ValueListenableBuilder<TextEditingValue>(
-                          valueListenable: _textController,
-                          builder: (context, value, child) {
-                            const blueColor = Colors.blue; // Blue color for all icons
-                            const iconSize = 32.0; // Container size for icons (+, camera, gallery, mic, arrow)
-                            const iconInnerSize = 22.0; // Match like icon size (22) for all icon contents
-                            final hasText = value.text.isNotEmpty; // Check for any text, even spaces
-                            // Transform when field is focused OR has text
-                            final shouldTransform = isFocused || hasText;
-                        
-                        return AnimatedSize(
-                          duration: const Duration(milliseconds: 150),
-                          curve: Curves.easeInOut,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                            // Plus/Arrow icon - transforms from + to > when typing
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 150),
-                              switchInCurve: Curves.easeInOut,
-                              switchOutCurve: Curves.easeInOut,
-                              child: Container(
-                                key: ValueKey(shouldTransform ? 'arrow' : 'plus'),
-                                width: iconSize,
-                                height: iconSize,
-                                decoration: const BoxDecoration(
-                                  color: blueColor,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    customBorder: const CircleBorder(),
-                                    onTap: shouldTransform 
-                                        ? () {
-                                            // When arrow is clicked, unfocus field and restore original form
-                                            _messageFocusNode.unfocus();
-                                            // Optionally clear text to fully reset
-                                            _textController.clear();
-                                          }
-                                        : _pickAndSendMedia,
-                                    child: Icon(
-                                      shouldTransform ? Icons.arrow_forward : Icons.add,
-                                      color: Colors.white,
-                                      size: iconInnerSize,
-                                    ),
-                                  ),
-                                ),
+                    // Icon group (left side) - Camera and Gallery icons
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(width: 4),
+                        // Camera icon (blue)
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () async {
+                              final x = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85, maxWidth: 1600);
+                              if (x == null) return;
+                              final url = await AuthService.uploadImageToCloudinary(x.path);
+                              if (url == null) return;
+                              await _sendMediaMessage(url, 'image');
+                            },
+                            child: Container(
+                              width: 32.0,
+                              height: 32.0,
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                Icons.camera_alt_outlined,
+                                color: Colors.blue,
+                                size: 22.0,
                               ),
                             ),
-                            // Camera, Gallery, Mic icons - hide when focused or typing with smooth animation
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 150),
-                              switchInCurve: Curves.easeInOut,
-                              switchOutCurve: Curves.easeInOut,
-                              child: shouldTransform
-                                  ? const SizedBox.shrink(key: ValueKey('hidden'))
-                                  : Row(
-                                      key: const ValueKey('visible'),
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                          const SizedBox(width: 4),
-                                          // Camera icon (blue)
-                                          Material(
-                                            color: Colors.transparent,
-                                            child: InkWell(
-                                              customBorder: const CircleBorder(),
-                                              onTap: () async {
-                                                final x = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85, maxWidth: 1600);
-                                                if (x == null) return;
-                                                final url = await AuthService.uploadImageToCloudinary(x.path);
-                                                if (url == null) return;
-                                                await _sendMediaMessage(url, 'image');
-                                              },
-                                              child: Container(
-                                                width: iconSize,
-                                                height: iconSize,
-                                                alignment: Alignment.center,
-                                                child: const Icon(
-                                                  Icons.camera_alt_outlined,
-                                                  color: blueColor,
-                                                  size: iconInnerSize,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          // Gallery icon (blue)
-                                          Material(
-                                            color: Colors.transparent,
-                                            child: InkWell(
-                                              customBorder: const CircleBorder(),
-                                              onTap: () async {
-                                                final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600);
-                                                if (x == null) return;
-                                                final url = await AuthService.uploadImageToCloudinary(x.path);
-                                                if (url == null) return;
-                                                await _sendMediaMessage(url, 'image');
-                                              },
-                                              child: Container(
-                                                width: iconSize,
-                                                height: iconSize,
-                                                alignment: Alignment.center,
-                                                child: const Icon(
-                                                  Icons.photo_library_outlined,
-                                                  color: blueColor,
-                                                  size: iconInnerSize,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          // Microphone icon (blue)
-                                          Material(
-                                            color: Colors.transparent,
-                                            child: InkWell(
-                                              customBorder: const CircleBorder(),
-                                              onTap: _isRecording ? null : _startRecording,
-                                              child: Container(
-                                                width: iconSize,
-                                                height: iconSize,
-                                                alignment: Alignment.center,
-                                                child: Icon(
-                                                  _isRecording ? Icons.mic : Icons.mic_outlined,
-                                                  color: _isRecording ? Colors.red : blueColor,
-                                                  size: iconInnerSize,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                              ),
-                            ],
                           ),
-                        );
-                          },
-                        );
-                      },
+                        ),
+                        const SizedBox(width: 8),
+                        // Gallery icon (blue)
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () async {
+                              final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600);
+                              if (x == null) return;
+                              final url = await AuthService.uploadImageToCloudinary(x.path);
+                              if (url == null) return;
+                              await _sendMediaMessage(url, 'image');
+                            },
+                            child: Container(
+                              width: 32.0,
+                              height: 32.0,
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                Icons.photo_library_outlined,
+                                color: Colors.blue,
+                                size: 22.0,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
                     ),
                     const SizedBox(width: 6),
                     // Text input field (light gray rounded) - expands when typing
@@ -1782,137 +1360,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
           ],
         ),
           ),
-          // Recording UI overlay - modern design
-          if (_isRecording)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 20,
-                      spreadRadius: 0,
-                      offset: const Offset(0, -4),
-                    ),
-                  ],
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                child: SafeArea(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Recording indicator and waveform
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Row(
-                          children: [
-                            // Red recording indicator
-                            Container(
-                              width: 12,
-                              height: 12,
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.red.withOpacity(0.5),
-                                    blurRadius: 8,
-                                    spreadRadius: 2,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            // Duration
-                            Text(
-                              _formatDuration(_recordingDuration),
-                              style: TextStyle(
-                                color: Colors.red.shade700,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            // Waveform during recording
-                            Expanded(
-                              child: _AudioWaveform(
-                                isPlaying: true,
-                                barColor: Colors.red,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Send button (centered)
-                      Center(
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: _isSendingRecording ? null : _stopRecordingAndSend,
-                            borderRadius: BorderRadius.circular(16),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                              decoration: BoxDecoration(
-                                color: _isSendingRecording ? Colors.grey : Colors.blue,
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: _isSendingRecording ? null : [
-                                  BoxShadow(
-                                    color: Colors.blue.withOpacity(0.3),
-                                    blurRadius: 12,
-                                    spreadRadius: 0,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (_isSendingRecording)
-                                    const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                      ),
-                                    )
-                                  else
-                                    const Icon(
-                                      Icons.send,
-                                      color: Colors.white,
-                                      size: 24,
-                                    ),
-                                  if (_isSendingRecording) const SizedBox(width: 12),
-                                  Text(
-                                    _isSendingRecording ? 'Sending...' : 'Send',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
         ], // Close Stack children
       ), // Close Stack
     ); // Close Scaffold
@@ -2015,22 +1462,88 @@ class _UserInfoPage extends StatelessWidget {
                                 : const Icon(Icons.person, size: 50))
                             : null,
                       ),
-                      // Green online indicator - properly positioned at bottom-right
-                      Positioned(
-                        right: 2,
-                        bottom: 2,
-                        child: Container(
-                          width: 18,
-                          height: 18,
-                          decoration: BoxDecoration(
-                            color: Colors.green,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Theme.of(context).scaffoldBackgroundColor,
-                              width: 2.5,
+                      // Online indicator - shows green if online, gray if offline
+                      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                        stream: FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(peerUserId)
+                            .snapshots(),
+                        builder: (context, userSnap) {
+                          final theme = Theme.of(context);
+                          final isDark = theme.brightness == Brightness.dark;
+                          
+                          // Determine colors based on theme
+                          final onlineColor = isDark ? Colors.green.shade400 : Colors.green;
+                          final offlineColor = isDark ? Colors.grey.shade400 : Colors.grey.shade600;
+                          
+                          bool isOnline = false;
+                          bool foundInUsers = false;
+                          
+                          if (userSnap.hasData && userSnap.data!.exists) {
+                            foundInUsers = true;
+                            final userData = userSnap.data!.data();
+                            // Default to false (offline/gray) if isOnline field doesn't exist
+                            isOnline = (userData?['isOnline'] as bool?) ?? false;
+                          } else {
+                            // If document doesn't exist, default to offline (gray)
+                            isOnline = false;
+                          }
+                          
+                          // If not found in users, check admins collection
+                          if (!foundInUsers) {
+                            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                              stream: FirebaseFirestore.instance
+                                  .collection('admins')
+                                  .doc(peerUserId)
+                                  .snapshots(),
+                              builder: (context, adminSnap) {
+                                if (adminSnap.hasData && adminSnap.data!.exists) {
+                                  final adminData = adminSnap.data!.data();
+                                  // Default to false (offline/gray) if isOnline field doesn't exist
+                                  isOnline = (adminData?['isOnline'] as bool?) ?? false;
+                                } else {
+                                  // If document doesn't exist, default to offline (gray)
+                                  isOnline = false;
+                                }
+                                
+                                return Positioned(
+                                  right: 2,
+                                  bottom: 2,
+                                  child: Container(
+                                    width: 18,
+                                    height: 18,
+                                    decoration: BoxDecoration(
+                                      color: isOnline ? onlineColor : offlineColor,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: theme.scaffoldBackgroundColor,
+                                        width: 2.5,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          }
+                          
+                          // Show indicator - green if online, gray if offline
+                          return Positioned(
+                            right: 2,
+                            bottom: 2,
+                            child: Container(
+                              width: 18,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                color: isOnline ? onlineColor : offlineColor,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: theme.scaffoldBackgroundColor,
+                                  width: 2.5,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       ),
                     ],
                   ),

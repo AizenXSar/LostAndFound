@@ -19,7 +19,8 @@ service cloud.firestore {
     
     // Items collection
     match /items/{itemId} {
-      allow read: if isAuthenticated();
+      // Public reads to allow list queries for badges/counters in nav
+      allow read: if true;
       allow create: if isAuthenticated();
       // Allow update if user is owner/admin, OR if updating only like/interaction fields
       allow update: if isAuthenticated() && (
@@ -39,9 +40,17 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       // Allow create if authenticated and document ID matches user's UID
       allow create: if isAuthenticated() && userId == request.auth.uid;
+      // Allow self to update profile fields and lastViewed timestamps; admins can update anything
       allow update: if isAuthenticated() && (
-        userId == request.auth.uid ||
-        isAdmin()
+        isAdmin() || (
+          userId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name',
+            'profileImageUrl',
+            'lastViewedLostItems',
+            'lastViewedFoundItems'
+          ])
+        )
       );
       allow delete: if isAdmin();
     }
@@ -155,6 +164,38 @@ service cloud.firestore {
       allow create: if isAuthenticated();
       // Only admins can update or delete logs
       allow update, delete: if isAdmin();
+    }
+    
+    // Calls collection - for video/audio calls
+    match /calls/{callId} {
+      // Helper function to check if user is caller (for existing documents)
+      function isCaller() {
+        return resource.data.callerId == request.auth.uid;
+      }
+      
+      // Helper function to check if user is peer/recipient (for existing documents)
+      function isPeer() {
+        return resource.data.peerId == request.auth.uid;
+      }
+      
+      // Allow read if user is the caller or peer
+      allow read: if isAuthenticated() && (
+        isCaller() || isPeer()
+      );
+      
+      // Allow create if authenticated and user is the caller
+      allow create: if isAuthenticated() && 
+        request.resource.data.callerId == request.auth.uid;
+      
+      // Allow update if user is the caller or peer (to accept/reject/end)
+      allow update: if isAuthenticated() && (
+        isCaller() || isPeer()
+      );
+      
+      // Allow delete if user is the caller or peer
+      allow delete: if isAuthenticated() && (
+        isCaller() || isPeer()
+      );
     }
   }
 }
